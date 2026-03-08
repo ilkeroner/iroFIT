@@ -1338,7 +1338,7 @@ body::after {
     <div class="topbar-actions">
       <div class="icon-btn" onclick="openWeightOverlay()">⚖️</div>
       <div class="icon-btn" onclick="openPhotoOverlay()">📸</div>
-      <div class="icon-btn" title="Profili Sıfırla" onclick="if(confirm('Tüm verilerini silip baştan başlamak istiyor musun?')){localStorage.removeItem('irofitData_v1');location.reload();}">⚙️</div>
+      <div class="icon-btn" title="API Key & Ayarlar" onclick="showSettingsMenu()">⚙️</div><div class="icon-btn" onclick="showApiKeyModal()" title="API Key">🔑</div>
     </div>
   </div>
 
@@ -1630,6 +1630,7 @@ const DAILY_KEY = 'irofitDaily_v1'; // Günlük geçmiş — tarih bazlı
 
 const DEFAULT_APP = {
   onboarded: false,
+  apiKey: '',
   name: '',
   age: 30,
   gender: 'Kadın',
@@ -1972,7 +1973,7 @@ async function handleLabUpload(input) {
         ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
         : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } };
 
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2512,13 +2513,23 @@ async function callClaude(singlePrompt, history, system) {
     messages: messages
   };
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  // API key handled by proxy
+
+  const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
     body: JSON.stringify(body)
   });
 
-  if(!resp.ok) throw new Error('API error');
+  if(!resp.ok) {
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(err.error?.message || 'API error ' + resp.status);
+  }
   const data = await resp.json();
   return data.content.map(c => c.text || '').join('');
 }
@@ -2783,8 +2794,16 @@ function switchPage(pageId, navId) {
 // BOOT — kaydedilmiş veriye göre doğru ekrandan başla
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  // Restore API key
+  const storedKey = localStorage.getItem('irofitApiKey');
+  if(storedKey) APP.apiKey = storedKey;
   checkWaterReset();
   updateOnbProgress();
+
+  // API key yoksa otomatik modal aç
+  if(!storedKey && APP.onboarded) {
+    setTimeout(() => showApiKeyModal(), 1200);
+  }
 
   if(APP.onboarded) {
     goTo('app');
@@ -2811,6 +2830,70 @@ document.addEventListener('DOMContentLoaded', () => {
     goTo('splash');
   }
 });
+
+// ============================================================
+// API KEY YÖNETİMİ
+// ============================================================
+function showSettingsMenu() {
+  const existing = document.getElementById('settingsMenu');
+  if(existing) { existing.remove(); return; }
+  const menu = document.createElement('div');
+  menu.id = 'settingsMenu';
+  menu.style.cssText = 'position:fixed;top:70px;right:16px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--r);padding:8px;z-index:400;min-width:200px;box-shadow:0 8px 32px rgba(0,0,0,0.4)';
+  menu.innerHTML = `
+    <div onclick="showApiKeyModal();document.getElementById('settingsMenu').remove()" style="padding:12px 16px;cursor:pointer;border-radius:8px;font-size:14px;display:flex;align-items:center;gap:10px" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">
+      🔑 <span>API Key Ayarla</span>
+    </div>
+    <div onclick="if(confirm('Tüm verilerini silip baştan başlamak istiyor musun?')){localStorage.clear();location.reload()}" style="padding:12px 16px;cursor:pointer;border-radius:8px;font-size:14px;display:flex;align-items:center;gap:10px;color:var(--coral)" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">
+      🗑️ <span>Profili Sıfırla</span>
+    </div>
+  `;
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', function rm(e){ if(!menu.contains(e.target)){menu.remove();document.removeEventListener('click',rm);} }), 100);
+}
+
+function showApiKeyModal() {
+  const modal = document.getElementById('apiKeyModal');
+  modal.style.display = 'flex';
+  const stored = APP.apiKey || localStorage.getItem('irofitApiKey') || '';
+  document.getElementById('apiKeyInput').value = stored;
+}
+
+function closeApiKeyModal() {
+  document.getElementById('apiKeyModal').style.display = 'none';
+}
+
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if(!key.startsWith('sk-')) {
+    document.getElementById('apiKeyInput').style.borderColor = 'var(--coral)';
+    return;
+  }
+  APP.apiKey = key;
+  localStorage.setItem('irofitApiKey', key);
+  saveApp();
+  closeApiKeyModal();
+  showToast('🔑', 'API Bağlantısı Kuruldu!', 'Artık gerçek AI yanıtları alacaksın 🌿');
+}
 </script>
+
+<!-- API KEY MODAL -->
+<div id="apiKeyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);z-index:600;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1.5px solid var(--jade);border-radius:var(--r);padding:28px 24px;width:90%;max-width:380px">
+    <div style="font-size:28px;margin-bottom:12px">🔑</div>
+    <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;margin-bottom:8px">Anthropic API Key</div>
+    <div style="font-size:13px;color:var(--text-mid);margin-bottom:20px;line-height:1.6">
+      AI özelliklerini kullanmak için Anthropic API anahtarın gerekli.<br><br>
+      <a href="https://console.anthropic.com" target="_blank" style="color:var(--jade)">console.anthropic.com</a> adresinden ücretsiz alabilirsin.
+    </div>
+    <input id="apiKeyInput" type="password" placeholder="sk-ant-api03-..." 
+      style="width:100%;background:var(--deep);border:2px solid var(--border);border-radius:var(--r-sm);padding:14px;font-size:14px;font-family:var(--mono);color:var(--jade);outline:none;margin-bottom:16px"
+      oninput="this.style.borderColor=this.value.startsWith('sk-')?'var(--jade)':'var(--coral)'">
+    <div style="display:flex;gap:10px">
+      <button onclick="closeApiKeyModal()" style="flex:1;background:var(--surface);border:1.5px solid var(--border);color:var(--text-mid);padding:14px;border-radius:50px;font-family:var(--font);font-size:14px;cursor:pointer">İptal</button>
+      <button onclick="saveApiKey()" style="flex:2;background:linear-gradient(135deg,var(--jade),#00b894);color:#000;border:none;padding:14px;border-radius:50px;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">Kaydet & Bağlan</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
