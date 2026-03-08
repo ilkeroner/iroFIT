@@ -1507,10 +1507,7 @@ body::after {
       <!-- Meals -->
       <div class="section-head">
         <div class="section-h">Bugünkü Plan</div>
-        <div style="display:flex;gap:10px;align-items:center">
-          <span onclick="openZReport()" style="cursor:pointer;font-size:18px" title="Z Raporu">📊</span>
-          <span class="section-more" onclick="switchPage('pagePlan','navPlan')">Hepsi →</span>
-        </div>
+        <span class="section-more" onclick="switchPage('pagePlan','navPlan')">Hepsi →</span>
       </div>
       <div class="meal-list" id="homeMeals"></div>
 
@@ -1555,10 +1552,7 @@ body::after {
     <div class="page" id="pagePlan">
       <div class="section-head" style="margin-top:4px">
         <div class="section-h">Günlük Öğünler</div>
-        <div style="display:flex;gap:12px;align-items:center">
-          <span onclick="openZReport()" style="cursor:pointer;font-size:18px" title="Z Raporu">📊</span>
-          <span class="section-more" onclick="addSnack()">+ Ara Öğün</span>
-        </div>
+        <span class="section-more" onclick="addSnack()">+ Ara Öğün</span>
       </div>
       <div class="meal-list" id="planMeals"></div>
     </div>
@@ -1612,7 +1606,7 @@ body::after {
   </div>
 
   <!-- Bottom Nav -->
-  <div class="bottom-nav">
+  <div class="bottom-nav" style="display:grid;grid-template-columns:repeat(6,1fr)">
     <button class="nav-btn on" id="navHome" onclick="switchPage('pageHome','navHome')">
       <span class="ni">🏠</span>Ana Sayfa
     </button>
@@ -1628,6 +1622,9 @@ body::after {
     </button>
     <button class="nav-btn" id="navWeight" onclick="switchPage('pageWeight','navWeight')">
       <span class="ni">⚖️</span>Kilo
+    </button>
+    <button class="nav-btn" onclick="openZReport()">
+      <span class="ni">📊</span>Z Raporu
     </button>
   </div>
 </div>
