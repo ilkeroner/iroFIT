@@ -1507,7 +1507,10 @@ body::after {
       <!-- Meals -->
       <div class="section-head">
         <div class="section-h">Bugünkü Plan</div>
-        <span class="section-more" onclick="switchPage('pagePlan','navPlan')">Hepsi →</span>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span onclick="openZReport()" style="cursor:pointer;font-size:18px" title="Z Raporu">📊</span>
+          <span class="section-more" onclick="switchPage('pagePlan','navPlan')">Hepsi →</span>
+        </div>
       </div>
       <div class="meal-list" id="homeMeals"></div>
 
@@ -1681,6 +1684,17 @@ body::after {
       🤖 Analiz Et &amp; Kaydet
     </button>
     <div id="mealEditResult"></div>
+  </div>
+</div>
+
+<!-- Z REPORT OVERLAY -->
+<div class="meal-edit-modal" id="zReportModal" onclick="if(event.target===this)document.getElementById('zReportModal').classList.remove('open')">
+  <div class="meal-edit-sheet" style="max-height:85vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700">📊 Günlük Z Raporu</div>
+      <button onclick="document.getElementById('zReportModal').classList.remove('open')" style="background:none;border:none;color:var(--text-faint);font-size:22px;cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div id="zReportContent"></div>
   </div>
 </div>
 
@@ -2606,13 +2620,14 @@ verdict: positive=saglikli, warning=dikkat, danger=kacin`;
 }
 
 function addSnack() {
-  // Snack için direkt edit modal
   const newSnack = { id: 'snack_' + Date.now(), time: '10:30', name: 'Ara Öğün', desc: '', cal: 200, type: 'snack', photo: null, aiAnalysis: null };
   const meals = getMeals();
   meals.push(newSnack);
+  meals.sort((a,b) => a.time.localeCompare(b.time));
   APP.meals = meals;
   saveApp();
   buildMeals();
+  buildPlanMeals();
   openMealEditModal(newSnack);
 }
 
@@ -2620,6 +2635,74 @@ function deleteSnack(id) {
   APP.meals = getMeals().filter(m => m.id !== id);
   saveApp();
   buildMeals();
+}
+
+// ============================================================
+// Z RAPORU
+// ============================================================
+async function openZReport() {
+  document.getElementById('zReportModal').classList.add('open');
+  const el = document.getElementById('zReportContent');
+  const meals = getMeals();
+  const totalCal = meals.reduce((s, m) => s + (m.aiAnalysis ? m.aiAnalysis.calories : m.cal), 0);
+  const target = APP.tdee || 2000;
+  const diff = target - totalCal;
+  const diffText = diff > 0 ? `${diff} kal eksik` : `${Math.abs(diff)} kal fazla`;
+  const diffColor = diff > 0 ? 'var(--sky)' : diff < -200 ? 'var(--coral)' : 'var(--jade)';
+
+  // Öğün satırları
+  const rows = meals.map(m => {
+    const cal = m.aiAnalysis ? m.aiAnalysis.calories : m.cal;
+    const hasAI = !!m.aiAnalysis;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:44px">${m.time}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${m.name}</div>
+        <div style="font-size:11px;color:var(--text-faint)">${m.desc || '—'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:15px;font-weight:800;font-family:var(--mono);color:${hasAI ? 'var(--jade)' : 'var(--gold)'}">${cal}</div>
+        <div style="font-size:9px;color:var(--text-faint)">${hasAI ? 'AI' : 'tahmini'}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    ${rows}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;margin-top:4px">
+      <div style="font-size:13px;font-weight:700">Toplam</div>
+      <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--gold)">${totalCal} kal</div>
+    </div>
+    <div style="background:var(--surface);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;color:var(--text-faint)">Hedef</div>
+        <div style="font-size:16px;font-weight:700">${target} kal</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--text-faint)">Fark</div>
+        <div style="font-size:16px;font-weight:700;color:${diffColor}">${diffText}</div>
+      </div>
+    </div>
+    <div id="zAiComment" style="background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px;font-size:13px;color:var(--text-mid);line-height:1.6">
+      ⏳ AI yorumu hazırlanıyor...
+    </div>`;
+
+  // AI yorum
+  try {
+    const mealSummary = meals.map(m => `${m.name} (${m.aiAnalysis ? m.aiAnalysis.calories : m.cal} kal${m.aiAnalysis ? ', AI analiz' : ', tahmini'})`).join(', ');
+    const prompt = `Kullanıcı bugün şunları yedi: ${mealSummary}. Toplam: ${totalCal} kal, hedef: ${target} kal, fark: ${diffText}. Kullanıcı: ${APP.name}, hedef: ${APP.goal}. 2-3 cümle kısa, samimi, motive edici Türkçe yorum yap. Gün nasıl geçti?`;
+    const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 200, system: 'Sen diyetisyen asistanısın. Kısa ve samimi Türkçe yorum yap.', messages: [{ role: 'user', content: prompt }] })
+    });
+    const d = await resp.json();
+    const comment = d.content?.map(c => c.text || '').join('') || '';
+    document.getElementById('zAiComment').textContent = comment;
+  } catch(e) {
+    document.getElementById('zAiComment').textContent = diff > 0
+      ? `Bugün hedefin ${diff} kal altındasın — hafif açık kalmak zaman zaman olabilir, yarın dengeler.`
+      : `Hedefini ${Math.abs(diff)} kal aştın. Yine de tek bir gün belirleyici değil — yarın devam!`;
+  }
 }
 
 // ============================================================
