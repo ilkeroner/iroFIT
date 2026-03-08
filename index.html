@@ -1555,7 +1555,10 @@ body::after {
     <div class="page" id="pagePlan">
       <div class="section-head" style="margin-top:4px">
         <div class="section-h">Günlük Öğünler</div>
-        <span class="section-more" onclick="addSnack()">+ Ara Öğün</span>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span onclick="openZReport()" style="cursor:pointer;font-size:18px" title="Z Raporu">📊</span>
+          <span class="section-more" onclick="addSnack()">+ Ara Öğün</span>
+        </div>
       </div>
       <div class="meal-list" id="planMeals"></div>
     </div>
