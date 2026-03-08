@@ -1540,9 +1540,10 @@ body::after {
     <!-- PLAN PAGE -->
     <div class="page" id="pagePlan">
       <div class="section-head" style="margin-top:4px">
-        <div class="section-h">Haftalık Plan</div>
+        <div class="section-h">Günlük Öğünler</div>
+        <span class="section-more" onclick="addSnack()">+ Ara Öğün</span>
       </div>
-      <div id="fullPlan"></div>
+      <div class="meal-list" id="planMeals"></div>
     </div>
 
     <!-- BLOOD PAGE -->
@@ -1619,23 +1620,12 @@ body::after {
   <div class="sheet">
     <div class="sheet-handle"></div>
     <div class="sheet-title" id="photoSheetTitle">📸 Yemeğini Analiz Et</div>
-    <div class="photo-zone" onclick="document.getElementById('photoFileInput').click()">
+    <div class="photo-zone" id="photoZoneWrap">
       <input type="file" id="photoFileInput" accept="image/*" style="display:none" onchange="handleMealPhoto(this)">
-      <input type="file" id="photoFileCamera" accept="image/*" capture="environment" style="display:none" onchange="handleMealPhoto(this)">
-      <img id="photoPreviewImg" style="display:none;width:100%;border-radius:12px;object-fit:cover;max-height:200px">
-      <div id="photoZonePlaceholder" style="display:flex;flex-direction:column;align-items:center;padding:20px;gap:12px">
-        <div style="font-size:48px">📷</div>
-        <div class="photo-zone-txt">Yemeğini fotoğrafla</div>
-        <div style="display:flex;gap:10px;width:100%">
-          <button onclick="event.stopPropagation();document.getElementById('photoFileCamera').click()" 
-            style="flex:1;background:var(--jade);color:#000;border:none;padding:12px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">
-            📸 Kamera
-          </button>
-          <button onclick="event.stopPropagation();document.getElementById('photoFileInput').click()" 
-            style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border);padding:12px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">
-            🖼️ Galeri
-          </button>
-        </div>
+      <img id="photoPreviewImg" style="display:none;width:100%;border-radius:12px;object-fit:contain;max-height:260px;background:#000">
+      <div id="photoZonePlaceholder" style="display:flex;flex-direction:column;align-items:center;padding:32px 20px;gap:10px;cursor:pointer" onclick="document.getElementById('photoFileInput').click()">
+        <div style="font-size:52px">📷</div>
+        <div class="photo-zone-txt">Fotoğraf seç veya çek</div>
         <div class="photo-zone-hint">AI kalori ve besin değerlerini hesaplar</div>
       </div>
     </div>
@@ -1739,7 +1729,8 @@ const DEFAULT_APP = {
   waterDate: '',
   chatHistory: [],
   weightLog: [],
-  healthPermission: false
+  healthPermission: false,
+  meals: []
 };
 
 function loadApp() {
@@ -1911,14 +1902,17 @@ function checkWaterReset() {
 
 const APP = loadApp();
 
-const MEALS = [
-  { time: '08:00', name: 'Kahvaltı', desc: 'Yulaf + yaban mersini + badem sütü + 1 yumurta', cal: 320, status: 'done' },
-  { time: '10:30', name: 'Ara Öğün', desc: '1 adet muz + 10 badem', cal: 180, status: 'done' },
-  { time: '13:00', name: 'Öğle Yemeği', desc: 'Izgara tavuk + kinoa + zeytinyağlı mevsim salatası', cal: 480, status: 'current' },
-  { time: '16:00', name: 'İkindi', desc: 'Yoğurt (D vitamini takviyeli) + 1 tatlı kaşığı bal', cal: 140, status: 'pending' },
-  { time: '19:30', name: 'Akşam Yemeği', desc: 'Somon (D vit.) + brokoli + tatlı patates püresi', cal: 520, status: 'pending' },
-  { time: '21:30', name: 'Gece Atıştırması', desc: 'Bir avuç ceviz (opsiyonel)', cal: 160, status: 'pending' },
+// MEALS — APP.meals içinde saklanır, 3 ana öğün + kullanıcı ara öğünleri
+const DEFAULT_MEALS = [
+  { id: 'm1', time: '08:00', name: 'Kahvaltı', desc: 'Yulaf + yumurta + meyve', cal: 350, type: 'main', photo: null, aiAnalysis: null },
+  { id: 'm2', time: '13:00', name: 'Öğle Yemeği', desc: 'Izgara tavuk + salata + pilav', cal: 500, type: 'main', photo: null, aiAnalysis: null },
+  { id: 'm3', time: '19:30', name: 'Akşam Yemeği', desc: 'Balık + sebze + yoğurt', cal: 450, type: 'main', photo: null, aiAnalysis: null },
 ];
+
+function getMeals() {
+  if(!APP.meals || APP.meals.length === 0) APP.meals = JSON.parse(JSON.stringify(DEFAULT_MEALS));
+  return APP.meals;
+}
 
 function getBloodData() {
   const rows = [];
@@ -2302,23 +2296,45 @@ function buildWater() {
 function buildMeals() {
   const el = document.getElementById('homeMeals');
   el.innerHTML = '';
-  MEALS.slice(0,4).forEach(m => el.appendChild(mealCard(m)));
+  const meals = getMeals();
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  meals.forEach(m => {
+    const [mh, mm] = m.time.split(':').map(Number);
+    const mMin = mh*60+(mm||0);
+    m.status = mMin < nowMin-30 ? 'done' : mMin <= nowMin+30 ? 'current' : 'pending';
+    el.appendChild(mealCard(m));
+  });
+  // + Ara Öğün ekle butonu
+  const addBtn = document.createElement('div');
+  addBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:1.5px dashed var(--border);border-radius:var(--r);cursor:pointer;color:var(--jade);font-size:13px;font-weight:600';
+  addBtn.innerHTML = '＋ Ara Öğün Ekle';
+  addBtn.onclick = addSnack;
+  el.appendChild(addBtn);
 }
 
 function mealCard(m) {
   const div = document.createElement('div');
   div.className = 'meal-card' + (m.status==='current'?' active-meal':m.status==='done'?' done-meal':'');
-  const dotClass = m.status==='done'?'md-done':m.status==='current'?'md-active':'md-pending';
-  const dotIcon = m.status==='done'?'✓':m.status==='current'?'●':'○';
+  div.dataset.mealId = m.id;
+  
+  const hasPhoto = m.photo && m.aiAnalysis;
+  const calDisplay = hasPhoto ? `<div class="meal-kcal-num" style="color:var(--jade)">${m.aiAnalysis.calories}</div>` : `<div class="meal-kcal-num">${m.cal}</div>`;
+  const photoThumb = hasPhoto ? `<img src="${m.photo}" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:44px;height:44px;border-radius:8px;background:var(--surface);border:1.5px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📸</div>`;
+  const snackDel = m.type==='snack' ? `<div onclick="event.stopPropagation();deleteSnack('${m.id}')" style="position:absolute;top:8px;right:8px;color:var(--coral);font-size:18px;cursor:pointer;line-height:1">×</div>` : '';
+
+  div.style.position = 'relative';
   div.innerHTML = `
+    ${snackDel}
     <div class="meal-time">${m.time}</div>
     <div class="meal-body">
-      <div class="meal-name">${m.name}</div>
-      <div class="meal-desc">${m.desc}</div>
+      <div class="meal-name">${m.name}${hasPhoto ? ' <span style="font-size:10px;color:var(--jade);background:rgba(0,212,170,0.12);padding:2px 6px;border-radius:10px">AI analiz</span>' : ''}</div>
+      <div class="meal-desc">${hasPhoto ? m.aiAnalysis.comment.substring(0,60)+'...' : m.desc}</div>
     </div>
-    <div class="meal-kcal"><div class="meal-kcal-num">${m.cal}</div><div class="meal-kcal-unit">kal</div></div>
-    <div class="meal-dot ${dotClass}">${dotIcon}</div>
-    <div style="font-size:11px;color:var(--jade);margin-top:6px;text-align:center;width:100%">📸 Fotoğraf ekle</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      ${photoThumb}
+      <div class="meal-kcal">${calDisplay}<div class="meal-kcal-unit">kal</div></div>
+    </div>
   `;
   div.onclick = () => openMealPhotoOverlay(m);
   return div;
@@ -2326,12 +2342,42 @@ function mealCard(m) {
 
 function openMealPhotoOverlay(meal) {
   window._currentMeal = meal;
-  document.getElementById('photoSheetTitle').textContent = '📸 ' + meal.name + ' — Fotoğraf Analizi';
-  document.getElementById('photoPreviewImg').style.display = 'none';
-  document.getElementById('photoZonePlaceholder').style.display = 'flex';
+  const overlay = document.getElementById('photoOverlay');
+  document.getElementById('photoSheetTitle').textContent = meal.name;
   document.getElementById('aiLoadingArea').classList.remove('show');
-  document.getElementById('foodResult').classList.remove('show');
-  document.getElementById('photoOverlay').classList.add('open');
+
+  if(meal.photo && meal.aiAnalysis) {
+    // Daha önce analiz edilmişse göster
+    document.getElementById('photoPreviewImg').src = meal.photo;
+    document.getElementById('photoPreviewImg').style.display = 'block';
+    document.getElementById('photoZonePlaceholder').style.display = 'none';
+    showFoodResult(meal.aiAnalysis);
+  } else {
+    document.getElementById('photoPreviewImg').style.display = 'none';
+    document.getElementById('photoZonePlaceholder').style.display = 'flex';
+    document.getElementById('foodResult').classList.remove('show');
+  }
+  overlay.classList.add('open');
+}
+
+function addSnack() {
+  const time = prompt('Ara öğün saati? (örn: 10:30)', '10:30');
+  if(!time) return;
+  const name = prompt('Ne yedin / yiyeceksin?', 'Ara Öğün');
+  if(!name) return;
+  const meals = getMeals();
+  const newSnack = { id: 'snack_' + Date.now(), time, name, desc: name, cal: 200, type: 'snack', photo: null, aiAnalysis: null };
+  meals.push(newSnack);
+  meals.sort((a,b) => a.time.localeCompare(b.time));
+  APP.meals = meals;
+  saveApp();
+  buildMeals();
+}
+
+function deleteSnack(id) {
+  APP.meals = getMeals().filter(m => m.id !== id);
+  saveApp();
+  buildMeals();
 }
 
 // ============================================================
@@ -2879,6 +2925,21 @@ verdict: positive=sağlıklı, warning=dikkat, danger=kaçın`;
 
     const clean = raw.replace(/```json|```/g,'').trim();
     const data = JSON.parse(clean);
+    
+    // Analizi öğüne kaydet
+    const meal = window._currentMeal;
+    if(meal) {
+      const meals = getMeals();
+      const idx = meals.findIndex(m => m.id === meal.id);
+      if(idx !== -1) {
+        meals[idx].photo = 'data:image/jpeg;base64,' + base64Data;
+        meals[idx].aiAnalysis = data;
+        meals[idx].cal = data.calories; // kaloriyi güncelle
+        APP.meals = meals;
+        saveApp();
+        buildMeals(); // kartı güncelle
+      }
+    }
     showFoodResult(data);
 
   } catch(err) {
@@ -3154,12 +3215,32 @@ function buildHistoryContext(text) {
 // ============================================================
 // PAGE NAVIGATION
 // ============================================================
+function buildPlanMeals() {
+  const el = document.getElementById('planMeals');
+  if(!el) return;
+  el.innerHTML = '';
+  const meals = getMeals();
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  meals.forEach(m => {
+    const [mh, mm] = m.time.split(':').map(Number);
+    m.status = (mh*60+(mm||0)) < nowMin-30 ? 'done' : (mh*60+(mm||0)) <= nowMin+30 ? 'current' : 'pending';
+    el.appendChild(mealCard(m));
+  });
+  const addBtn = document.createElement('div');
+  addBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:1.5px dashed var(--border);border-radius:var(--r);cursor:pointer;color:var(--jade);font-size:13px;font-weight:600;margin-top:4px';
+  addBtn.innerHTML = '＋ Ara Öğün Ekle';
+  addBtn.onclick = addSnack;
+  el.appendChild(addBtn);
+}
+
 function switchPage(pageId, navId) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('on'));
   document.getElementById(pageId).classList.add('active');
   document.getElementById(navId).classList.add('on');
   if(pageId === 'pageWeight') { setTimeout(drawWeightChart, 100); }
+  if(pageId === 'pagePlan') { buildPlanMeals(); }
 }
 
 // ============================================================
