@@ -625,37 +625,48 @@ body::after {
 
 /* Meal cards */
 .meal-list { display: flex; flex-direction: column; gap: 10px; }
+/* Swipe wrapper */
+.meal-swipe-wrap { position: relative; border-radius: var(--r); overflow: hidden; }
+.meal-swipe-bg {
+  position: absolute; inset: 0; background: linear-gradient(90deg, var(--jade), #00b894);
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 24px; font-size: 13px; font-weight: 700; color: #000;
+  border-radius: var(--r);
+}
+.meal-swipe-inner {
+  position: relative; transition: transform 0.25s ease;
+  background: var(--card); border-radius: var(--r);
+}
+.meal-swipe-inner.swiped { transform: translateX(-88px); }
 .meal-card {
   background: var(--card);
   border: 1.5px solid var(--border);
   border-radius: var(--r);
   padding: 14px 16px;
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color 0.2s;
 }
 .meal-card:hover { border-color: var(--border2); }
 .meal-card.active-meal { border-color: var(--jade); background: rgba(0,212,170,0.06); }
-.meal-card.done-meal { opacity: 0.55; }
-.meal-time { font-family: var(--mono); font-size: 14px; color: var(--jade); font-weight: 500; min-width: 48px; }
-.meal-body { flex: 1; }
+.meal-card.done-meal { opacity: 0.6; }
+.meal-time { font-family: var(--mono); font-size: 13px; color: var(--jade); font-weight: 500; min-width: 44px; }
+.meal-body { flex: 1; min-width: 0; }
 .meal-name { font-size: 14px; font-weight: 600; }
-.meal-desc { font-size: 11px; color: var(--text-mid); margin-top: 2px; line-height: 1.4; }
-.meal-kcal { text-align: right; }
+.meal-desc { font-size: 11px; color: var(--text-mid); margin-top: 2px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meal-kcal { text-align: center; flex-shrink: 0; }
 .meal-kcal-num { font-size: 17px; font-weight: 800; color: var(--gold); letter-spacing: -0.5px; font-family: 'DM Mono', monospace; }
 .meal-kcal-unit { font-size: 9px; color: var(--text-faint); }
-.meal-dot {
-  width: 32px; height: 32px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; flex-shrink: 0;
-}
-.md-pending { background: var(--surface); border: 1.5px solid var(--border); }
-.md-done { background: rgba(0,212,170,0.15); }
-.md-active { background: var(--jade); animation: mealPulse 2s ease infinite; }
 @keyframes mealPulse {
   0%,100% { box-shadow: 0 0 0 0 var(--jade-glow); }
   50% { box-shadow: 0 0 0 6px transparent; }
 }
+/* Meal edit modal */
+.meal-edit-modal { display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);z-index:600;align-items:flex-end;justify-content:center; }
+.meal-edit-modal.open { display:flex; }
+.meal-edit-sheet { background:var(--card);border:1.5px solid var(--border);border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 20px 40px;animation:sheetUp 0.35s cubic-bezier(0.34,1.56,0.64,1); }
+.meal-edit-sheet textarea { width:100%;background:var(--deep);border:1.5px solid var(--border);border-radius:12px;padding:14px;font-size:14px;color:var(--text);font-family:var(--font);outline:none;resize:none;min-height:90px;line-height:1.6; }
+.meal-edit-sheet textarea:focus { border-color:var(--jade); }
 
 /* Water */
 .water-tile {
@@ -1638,6 +1649,25 @@ body::after {
   </div>
 </div>
 
+<!-- MEAL EDIT MODAL -->
+<div class="meal-edit-modal" id="mealEditModal" onclick="if(event.target===this)closeMealEditModal()">
+  <div class="meal-edit-sheet">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700" id="mealEditTitle">Öğün Düzenle</div>
+      <button onclick="closeMealEditModal()" style="background:none;border:none;color:var(--text-faint);font-size:22px;cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+      <div style="font-size:12px;color:var(--text-faint);white-space:nowrap">Saat</div>
+      <input id="mealEditTime" type="time" style="background:var(--deep);border:1.5px solid var(--border);border-radius:10px;padding:8px 12px;font-size:14px;color:var(--text);font-family:var(--font);outline:none;width:110px">
+    </div>
+    <textarea id="mealEditDesc" placeholder="Ne yedin? (örn: 2 yumurta, tam buğday ekmek, az yağlı peynir, domates)" rows="3"></textarea>
+    <button id="mealEditSaveBtn" onclick="saveMealEdit()" style="width:100%;margin-top:12px;background:var(--jade);color:#000;border:none;border-radius:50px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font)">
+      🤖 Analiz Et &amp; Kaydet
+    </button>
+    <div id="mealEditResult"></div>
+  </div>
+</div>
+
 <!-- WEIGHT OVERLAY -->
 <div id="weightOverlay">
   <div class="weight-popup">
@@ -2314,64 +2344,203 @@ function buildMeals() {
 }
 
 function mealCard(m) {
-  const div = document.createElement('div');
-  div.className = 'meal-card' + (m.status==='current'?' active-meal':m.status==='done'?' done-meal':'');
-  div.dataset.mealId = m.id;
-  
-  const hasPhoto = m.photo && m.aiAnalysis;
-  const calDisplay = hasPhoto ? `<div class="meal-kcal-num" style="color:var(--jade)">${m.aiAnalysis.calories}</div>` : `<div class="meal-kcal-num">${m.cal}</div>`;
-  const photoThumb = hasPhoto ? `<img src="${m.photo}" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:44px;height:44px;border-radius:8px;background:var(--surface);border:1.5px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📸</div>`;
-  const snackDel = m.type==='snack' ? `<div onclick="event.stopPropagation();deleteSnack('${m.id}')" style="position:absolute;top:8px;right:8px;color:var(--coral);font-size:18px;cursor:pointer;line-height:1">×</div>` : '';
+  // Swipe wrapper
+  const wrap = document.createElement('div');
+  wrap.className = 'meal-swipe-wrap';
 
-  div.style.position = 'relative';
-  div.innerHTML = `
-    ${snackDel}
+  // Edit/delete button behind (swipe reveals)
+  const bg = document.createElement('div');
+  bg.className = 'meal-swipe-bg';
+  if(m.type === 'snack') {
+    bg.style.background = 'linear-gradient(90deg,#e74c3c,#c0392b)';
+    bg.innerHTML = '🗑️ Sil';
+    bg.onclick = () => deleteSnack(m.id);
+  } else {
+    bg.innerHTML = '✏️ Düzenle';
+    bg.onclick = () => openMealEditModal(m);
+  }
+
+  const inner = document.createElement('div');
+  inner.className = 'meal-swipe-inner';
+
+  const card = document.createElement('div');
+  card.className = 'meal-card' + (m.status==='current'?' active-meal':m.status==='done'?' done-meal':'');
+  card.dataset.mealId = m.id;
+
+  const hasAnalysis = m.aiAnalysis;
+  const calColor = hasAnalysis ? 'color:var(--jade)' : 'color:var(--gold)';
+  const calVal = hasAnalysis ? m.aiAnalysis.calories : m.cal;
+  const hasPhoto = m.photo && m.aiAnalysis;
+  const hasText = !m.photo && m.aiAnalysis;
+  const analyzed = hasPhoto || hasText;
+
+  let thumb = '';
+  if(hasPhoto) {
+    thumb = `<img src="${m.photo}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0">`;
+  } else {
+    thumb = `<div style="width:40px;height:40px;border-radius:8px;background:var(--surface);border:1.5px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${analyzed?'📝':'📸'}</div>`;
+  }
+
+  const badge = analyzed ? `<span style="font-size:9px;color:var(--jade);background:rgba(0,212,170,0.12);padding:1px 5px;border-radius:8px;margin-left:4px">AI</span>` : '';
+  const descText = analyzed ? (m.aiAnalysis.comment||'').substring(0,55)+'…' : m.desc;
+
+  card.innerHTML = `
     <div class="meal-time">${m.time}</div>
     <div class="meal-body">
-      <div class="meal-name">${m.name}${hasPhoto ? ' <span style="font-size:10px;color:var(--jade);background:rgba(0,212,170,0.12);padding:2px 6px;border-radius:10px">AI analiz</span>' : ''}</div>
-      <div class="meal-desc">${hasPhoto ? m.aiAnalysis.comment.substring(0,60)+'...' : m.desc}</div>
+      <div class="meal-name">${m.name}${badge}</div>
+      <div class="meal-desc">${descText}</div>
     </div>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-      ${photoThumb}
-      <div class="meal-kcal">${calDisplay}<div class="meal-kcal-unit">kal</div></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0">
+      ${thumb}
+      <div class="meal-kcal"><div class="meal-kcal-num" style="${calColor}">${calVal}</div><div class="meal-kcal-unit">kal</div></div>
     </div>
   `;
-  div.onclick = () => openMealPhotoOverlay(m);
-  return div;
+
+  // Tap → view analysis / photo overlay
+  card.onclick = () => openMealView(m);
+
+  // Swipe logic
+  let startX = 0, swiped = false;
+  inner.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, {passive:true});
+  inner.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - startX;
+    if(dx < -50) { inner.classList.add('swiped'); swiped = true; }
+    else if(dx > 30) { inner.classList.remove('swiped'); swiped = false; }
+  }, {passive:true});
+
+  inner.appendChild(card);
+  wrap.appendChild(bg);
+  wrap.appendChild(inner);
+  return wrap;
+}
+
+function openMealView(meal) {
+  window._currentMeal = meal;
+  if(meal.aiAnalysis) {
+    // Analiz varsa göster
+    document.getElementById('photoSheetTitle').textContent = meal.name;
+    document.getElementById('aiLoadingArea').classList.remove('show');
+    if(meal.photo) {
+      document.getElementById('photoPreviewImg').src = meal.photo;
+      document.getElementById('photoPreviewImg').style.display = 'block';
+      document.getElementById('photoZonePlaceholder').style.display = 'none';
+    } else {
+      document.getElementById('photoPreviewImg').style.display = 'none';
+      document.getElementById('photoZonePlaceholder').style.display = 'none';
+    }
+    showFoodResult(meal.aiAnalysis);
+    document.getElementById('photoOverlay').classList.add('open');
+  } else {
+    // Analiz yoksa edit modal aç
+    openMealEditModal(meal);
+  }
 }
 
 function openMealPhotoOverlay(meal) {
   window._currentMeal = meal;
-  const overlay = document.getElementById('photoOverlay');
   document.getElementById('photoSheetTitle').textContent = meal.name;
+  document.getElementById('photoPreviewImg').style.display = 'none';
+  document.getElementById('photoZonePlaceholder').style.display = 'flex';
   document.getElementById('aiLoadingArea').classList.remove('show');
+  document.getElementById('foodResult').classList.remove('show');
+  document.getElementById('photoOverlay').classList.add('open');
+}
 
-  if(meal.photo && meal.aiAnalysis) {
-    // Daha önce analiz edilmişse göster
-    document.getElementById('photoPreviewImg').src = meal.photo;
-    document.getElementById('photoPreviewImg').style.display = 'block';
-    document.getElementById('photoZonePlaceholder').style.display = 'none';
-    showFoodResult(meal.aiAnalysis);
-  } else {
-    document.getElementById('photoPreviewImg').style.display = 'none';
-    document.getElementById('photoZonePlaceholder').style.display = 'flex';
-    document.getElementById('foodResult').classList.remove('show');
+function openMealEditModal(meal) {
+  window._currentMeal = meal;
+  document.getElementById('mealEditTitle').textContent = '✏️ ' + meal.name + ' — Düzenle';
+  document.getElementById('mealEditTime').value = meal.time;
+  document.getElementById('mealEditDesc').value = meal.desc || '';
+  document.getElementById('mealEditResult').innerHTML = '';
+  document.getElementById('mealEditModal').classList.add('open');
+}
+
+function closeMealEditModal() {
+  document.getElementById('mealEditModal').classList.remove('open');
+}
+
+async function saveMealEdit() {
+  const meal = window._currentMeal;
+  const time = document.getElementById('mealEditTime').value.trim();
+  const desc = document.getElementById('mealEditDesc').value.trim();
+  if(!desc) return;
+
+  const btn = document.getElementById('mealEditSaveBtn');
+  btn.disabled = true;
+  btn.textContent = '🤖 AI analiz ediyor...';
+  document.getElementById('mealEditResult').innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-faint);font-size:13px">Analiz ediliyor...</div>';
+
+  try {
+    const prompt = `Bu yemeği analiz et:
+"${desc}"
+Kullanıcı: ${APP.name}, ${APP.age} yaş, hedef: ${APP.goal}, günlük kalori: ${APP.tdee} kal.
+${APP.ldl > 130 ? 'LDL yüksek.' : ''}${APP.uricAcid > 7.7 ? ' Urik asit yüksek.' : ''}
+Sadece JSON döndür:
+{"verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
+verdict: positive=saglikli, warning=dikkat, danger=kacin`;
+
+    const body = {
+      model: 'claude-haiku-4-5',
+      max_tokens: 400,
+      system: 'Sen diyetisyen asistanisın. Sadece JSON dondurun.',
+      messages: [{ role:'user', content: prompt }]
+    };
+    const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const d = await resp.json();
+    const raw = d.content?.map(c=>c.text||'').join('') || '';
+    const analysis = JSON.parse(raw.replace(/```json|```/g,'').trim());
+
+    // Kaydet
+    const meals = getMeals();
+    const idx = meals.findIndex(m => m.id === meal.id);
+    if(idx !== -1) {
+      meals[idx].desc = desc;
+      meals[idx].time = time;
+      meals[idx].aiAnalysis = analysis;
+      meals[idx].cal = analysis.calories;
+      meals[idx].photo = null; // metin analizi için fotoğraf sıfırla
+      APP.meals = meals;
+      saveApp();
+    }
+
+    // Sonucu göster
+    document.getElementById('mealEditResult').innerHTML = `
+      <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-top:4px">
+        <div style="font-size:22px;margin-bottom:6px">${analysis.emoji}</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px">${analysis.title}</div>
+        <div style="font-size:13px;color:var(--text-mid);line-height:1.6;margin-bottom:10px">${analysis.comment}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span style="background:rgba(0,212,170,0.12);color:var(--jade);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">${analysis.calories} kal</span>
+          <span style="background:var(--card);color:var(--text-mid);padding:4px 10px;border-radius:20px;font-size:12px">P: ${analysis.protein}</span>
+          <span style="background:var(--card);color:var(--text-mid);padding:4px 10px;border-radius:20px;font-size:12px">K: ${analysis.carb}</span>
+          <span style="background:var(--card);color:var(--text-mid);padding:4px 10px;border-radius:20px;font-size:12px">Y: ${analysis.fat}</span>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-faint)">💡 ${analysis.tip}</div>
+      </div>`;
+    
+    buildMeals();
+    btn.textContent = '✓ Kaydedildi';
+    setTimeout(() => { closeMealEditModal(); btn.disabled=false; btn.textContent='🤖 Analiz Et & Kaydet'; }, 1500);
+
+  } catch(err) {
+    console.error(err);
+    document.getElementById('mealEditResult').innerHTML = `<div style="color:var(--coral);font-size:13px;padding:8px">Hata: ${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '🤖 Analiz Et & Kaydet';
   }
-  overlay.classList.add('open');
 }
 
 function addSnack() {
-  const time = prompt('Ara öğün saati? (örn: 10:30)', '10:30');
-  if(!time) return;
-  const name = prompt('Ne yedin / yiyeceksin?', 'Ara Öğün');
-  if(!name) return;
+  // Snack için direkt edit modal
+  const newSnack = { id: 'snack_' + Date.now(), time: '10:30', name: 'Ara Öğün', desc: '', cal: 200, type: 'snack', photo: null, aiAnalysis: null };
   const meals = getMeals();
-  const newSnack = { id: 'snack_' + Date.now(), time, name, desc: name, cal: 200, type: 'snack', photo: null, aiAnalysis: null };
   meals.push(newSnack);
-  meals.sort((a,b) => a.time.localeCompare(b.time));
   APP.meals = meals;
   saveApp();
   buildMeals();
+  openMealEditModal(newSnack);
 }
 
 function deleteSnack(id) {
