@@ -1631,10 +1631,12 @@ body::after {
   <div class="sheet">
     <div class="sheet-handle"></div>
     <div class="sheet-title" id="photoSheetTitle">📸 Yemeğini Analiz Et</div>
-    <div class="photo-zone" id="photoZoneWrap">
-      <input type="file" id="photoFileInput" accept="image/*" style="display:none" onchange="handleMealPhoto(this)">
-      <img id="photoPreviewImg" style="display:none;width:100%;border-radius:12px;object-fit:contain;max-height:260px;background:#000">
-      <div id="photoZonePlaceholder" style="display:flex;flex-direction:column;align-items:center;padding:32px 20px;gap:10px;cursor:pointer" onclick="document.getElementById('photoFileInput').click()">
+    <div class="photo-zone" id="photoZoneWrap" style="position:relative;overflow:hidden">
+      <input type="file" id="photoFileInput" accept="image/*" 
+        style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2" 
+        onchange="handleMealPhoto(this)">
+      <img id="photoPreviewImg" style="display:none;width:100%;border-radius:12px;object-fit:contain;max-height:260px;background:#000;position:relative;z-index:1">
+      <div id="photoZonePlaceholder" style="display:flex;flex-direction:column;align-items:center;padding:32px 20px;gap:10px;pointer-events:none;position:relative;z-index:1">
         <div style="font-size:52px">📷</div>
         <div class="photo-zone-txt">Fotoğraf seç veya çek</div>
         <div class="photo-zone-hint">AI kalori ve besin değerlerini hesaplar</div>
@@ -2420,6 +2422,8 @@ function openMealView(meal) {
     // Analiz varsa göster
     document.getElementById('photoSheetTitle').textContent = meal.name;
     document.getElementById('aiLoadingArea').classList.remove('show');
+    document.getElementById('photoFileInput').style.opacity = '1';
+    document.getElementById('photoFileInput').style.pointerEvents = 'auto';
     if(meal.photo) {
       document.getElementById('photoPreviewImg').src = meal.photo;
       document.getElementById('photoPreviewImg').style.display = 'block';
@@ -2439,8 +2443,13 @@ function openMealView(meal) {
 function openMealPhotoOverlay(meal) {
   window._currentMeal = meal;
   document.getElementById('photoSheetTitle').textContent = meal.name;
+  const inp = document.getElementById('photoFileInput');
+  inp.style.opacity = '0';
+  inp.style.pointerEvents = 'auto';
   document.getElementById('photoPreviewImg').style.display = 'none';
   document.getElementById('photoZonePlaceholder').style.display = 'flex';
+  document.getElementById('photoFileInput').style.opacity = '1';
+  document.getElementById('photoFileInput').style.pointerEvents = 'auto';
   document.getElementById('aiLoadingArea').classList.remove('show');
   document.getElementById('foodResult').classList.remove('show');
   document.getElementById('photoOverlay').classList.add('open');
@@ -3038,6 +3047,8 @@ async function handleMealPhoto(input) {
   document.getElementById('aiLoadingArea').classList.add('show');
   document.getElementById('foodResult').classList.remove('show');
   document.getElementById('photoZonePlaceholder').style.display = 'none';
+  document.getElementById('photoFileInput').style.opacity = '0';
+  document.getElementById('photoFileInput').style.pointerEvents = 'none';
 
   // iOS uyumlu: canvas ile yeniden boyutlandır
   try {
