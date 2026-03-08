@@ -1663,6 +1663,20 @@ body::after {
       <input id="mealEditTime" type="time" style="background:var(--deep);border:1.5px solid var(--border);border-radius:10px;padding:8px 12px;font-size:14px;color:var(--text);font-family:var(--font);outline:none;width:110px">
     </div>
     <textarea id="mealEditDesc" placeholder="Ne yedin? (örn: 2 yumurta, tam buğday ekmek, az yağlı peynir, domates)" rows="3"></textarea>
+    
+    <!-- Fotoğraf seçeneği -->
+    <div style="margin-top:10px;position:relative">
+      <input type="file" id="mealEditPhoto" accept="image/*" 
+        style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2"
+        onchange="handleMealEditPhoto(this)">
+      <div id="mealEditPhotoPreview" style="border:1.5px dashed var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;pointer-events:none">
+        <div style="font-size:24px">📸</div>
+        <div>
+          <div style="font-size:13px;font-weight:600">Fotoğraf ekle (opsiyonel)</div>
+          <div style="font-size:11px;color:var(--text-faint)">Yazıyla birlikte daha doğru analiz</div>
+        </div>
+      </div>
+    </div>
     <button id="mealEditSaveBtn" onclick="saveMealEdit()" style="width:100%;margin-top:12px;background:var(--jade);color:#000;border:none;border-radius:50px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font)">
       🤖 Analiz Et &amp; Kaydet
     </button>
@@ -2311,7 +2325,8 @@ function buildWater() {
     d.className = 'drop' + (i < APP.waterDrank ? ' on' : '');
     d.textContent = '💧';
     d.onclick = () => {
-      APP.waterDrank = i + 1;
+      // Aynı bardağa tıklayınca o bardağı çıkar, yoksa ekle
+      APP.waterDrank = (APP.waterDrank === i + 1) ? i : i + 1;
       saveApp();
       saveDailyEntry({ waterDrank: APP.waterDrank });
       buildWater();
@@ -2457,11 +2472,34 @@ function openMealPhotoOverlay(meal) {
 
 function openMealEditModal(meal) {
   window._currentMeal = meal;
+  window._mealEditPhotoBase64 = null;
   document.getElementById('mealEditTitle').textContent = '✏️ ' + meal.name + ' — Düzenle';
   document.getElementById('mealEditTime').value = meal.time;
   document.getElementById('mealEditDesc').value = meal.desc || '';
   document.getElementById('mealEditResult').innerHTML = '';
+  document.getElementById('mealEditPhoto').value = '';
+  document.getElementById('mealEditPhotoPreview').innerHTML = `
+    <div style="font-size:24px">📸</div>
+    <div>
+      <div style="font-size:13px;font-weight:600">Fotoğraf ekle (opsiyonel)</div>
+      <div style="font-size:11px;color:var(--text-faint)">Yazıyla birlikte daha doğru analiz</div>
+    </div>`;
   document.getElementById('mealEditModal').classList.add('open');
+}
+
+async function handleMealEditPhoto(input) {
+  const file = input.files[0];
+  if(!file) return;
+  try {
+    const base64 = await resizeImageForAI(file);
+    window._mealEditPhotoBase64 = base64;
+    document.getElementById('mealEditPhotoPreview').innerHTML = `
+      <img src="data:image/jpeg;base64,${base64}" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--jade)">✓ Fotoğraf eklendi</div>
+        <div style="font-size:11px;color:var(--text-faint)">Analiz sırasında kullanılacak</div>
+      </div>`;
+  } catch(e) { console.error(e); }
 }
 
 function closeMealEditModal() {
@@ -2472,7 +2510,8 @@ async function saveMealEdit() {
   const meal = window._currentMeal;
   const time = document.getElementById('mealEditTime').value.trim();
   const desc = document.getElementById('mealEditDesc').value.trim();
-  if(!desc) return;
+  const photoB64 = window._mealEditPhotoBase64 || null;
+  if(!desc && !photoB64) { document.getElementById('mealEditDesc').focus(); return; }
 
   const btn = document.getElementById('mealEditSaveBtn');
   btn.disabled = true;
@@ -2480,43 +2519,53 @@ async function saveMealEdit() {
   document.getElementById('mealEditResult').innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-faint);font-size:13px">Analiz ediliyor...</div>';
 
   try {
-    const prompt = `Bu yemeği analiz et:
-"${desc}"
+    const promptText = `Bu yemeği analiz et${desc ? `:\n"${desc}"` : '.'}
 Kullanıcı: ${APP.name}, ${APP.age} yaş, hedef: ${APP.goal}, günlük kalori: ${APP.tdee} kal.
-${APP.ldl > 130 ? 'LDL yüksek.' : ''}${APP.uricAcid > 7.7 ? ' Urik asit yüksek.' : ''}
+${APP.ldl > 130 ? 'LDL yüksek.' : ''}${APP.uricAcid > 7.7 ? ' Ürik asit yüksek.' : ''}
 Sadece JSON döndür:
 {"verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
 verdict: positive=saglikli, warning=dikkat, danger=kacin`;
 
-    const body = {
-      model: 'claude-haiku-4-5',
-      max_tokens: 400,
-      system: 'Sen diyetisyen asistanisın. Sadece JSON dondurun.',
-      messages: [{ role:'user', content: prompt }]
-    };
-    const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const d = await resp.json();
-    const raw = d.content?.map(c=>c.text||'').join('') || '';
+    let raw = '';
+    if(photoB64) {
+      // Fotoğraflı analiz — Claude vision proxy
+      const msgs = [{ role:'user', content:[
+        { type:'image', source:{ type:'base64', media_type:'image/jpeg', data: photoB64 } },
+        { type:'text', text: promptText }
+      ]}];
+      const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:'claude-haiku-4-5', max_tokens:500, system:'Sen diyetisyen asistanısın. Sadece JSON döndür.', messages: msgs })
+      });
+      const d = await resp.json();
+      raw = d.content?.map(c=>c.text||'').join('') || '';
+    } else {
+      // Sadece metin analizi
+      const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:'claude-haiku-4-5', max_tokens:400, system:'Sen diyetisyen asistanısın. Sadece JSON döndür.', messages:[{role:'user',content:promptText}] })
+      });
+      const d = await resp.json();
+      raw = d.content?.map(c=>c.text||'').join('') || '';
+    }
+
     const analysis = JSON.parse(raw.replace(/```json|```/g,'').trim());
 
     // Kaydet
     const meals = getMeals();
     const idx = meals.findIndex(m => m.id === meal.id);
     if(idx !== -1) {
-      meals[idx].desc = desc;
-      meals[idx].time = time;
+      meals[idx].desc = desc || meals[idx].desc;
+      meals[idx].time = time || meals[idx].time;
       meals[idx].aiAnalysis = analysis;
       meals[idx].cal = analysis.calories;
-      meals[idx].photo = null; // metin analizi için fotoğraf sıfırla
+      meals[idx].photo = photoB64 ? 'data:image/jpeg;base64,' + photoB64 : meals[idx].photo;
       APP.meals = meals;
       saveApp();
     }
 
-    // Sonucu göster
     document.getElementById('mealEditResult').innerHTML = `
-      <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-top:4px">
+      <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-top:10px">
         <div style="font-size:22px;margin-bottom:6px">${analysis.emoji}</div>
         <div style="font-size:14px;font-weight:700;margin-bottom:6px">${analysis.title}</div>
         <div style="font-size:13px;color:var(--text-mid);line-height:1.6;margin-bottom:10px">${analysis.comment}</div>
@@ -2528,10 +2577,10 @@ verdict: positive=saglikli, warning=dikkat, danger=kacin`;
         </div>
         <div style="margin-top:10px;font-size:12px;color:var(--text-faint)">💡 ${analysis.tip}</div>
       </div>`;
-    
+
     buildMeals();
     btn.textContent = '✓ Kaydedildi';
-    setTimeout(() => { closeMealEditModal(); btn.disabled=false; btn.textContent='🤖 Analiz Et & Kaydet'; }, 1500);
+    setTimeout(() => { closeMealEditModal(); btn.disabled=false; btn.textContent='🤖 Analiz Et & Kaydet'; }, 1800);
 
   } catch(err) {
     console.error(err);
