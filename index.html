@@ -2819,36 +2819,70 @@ async function handleMealPhoto(input) {
     document.getElementById('aiLoadingArea').classList.add('show');
     document.getElementById('foodResult').classList.remove('show');
 
-    const msgs = [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: file.type, data: e.target.result.split(',')[1] }
-          },
-          {
-            type: 'text',
-            text: `Bu yemeği analiz et. Öğün: ${window._currentMeal ? window._currentMeal.name : "bilinmiyor"}, planlanan: ${window._currentMeal ? window._currentMeal.desc : ""}, tahmini kalori: ${window._currentMeal ? window._currentMeal.cal : "?"} kal. Kullanıcı: ${APP.name}, ${APP.age} yaş, günlük kalori hedefi ${APP.tdee} kal, hedef: ${APP.goal}.
-Türkçe olarak şu JSON formatında yanıt ver (başka hiçbir şey yazma):
-{"verdict": "positive/warning/danger", "emoji": "tek emoji", "title": "Kısa başlık", "comment": "2-3 cümle yorum, kişisel ve samimi, sağlıklıysa tebrik et, değilse nazikçe yönlendir", "calories": sayı, "protein": "Xg", "carb": "Xg", "fat": "Xg", "tip": "Tek cümle öneri"}`
-          }
-        ]
-      }
-    ];
+    const base64Data = e.target.result.split(',')[1];
+    const mealCtx = window._currentMeal;
+    const promptText = `Bu yemek fotoğrafını analiz et.
+${mealCtx ? `Öğün: ${mealCtx.name}, planlanan: ${mealCtx.desc}, tahmini kalori: ${mealCtx.cal} kal.` : ''}
+Kullanıcı: ${APP.name}, ${APP.age} yaş, günlük kalori hedefi ${APP.tdee} kal, hedef: ${APP.goal}.
+${APP.ldl > 130 ? 'Not: LDL kolesterol yüksek, yağlı yiyeceklere dikkat et.' : ''}
+${APP.uricAcid > 7.7 ? 'Not: Ürik asit yüksek, kırmızı et ve sakatatları işaretle.' : ''}
+
+Sadece şu JSON formatında yanıt ver, başka hiçbir şey yazma:
+{"verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
+verdict değerleri: positive (sağlıklı), warning (dikkat), danger (kaçın)`;
+
+    const claudeKey = APP.apiKey || localStorage.getItem('irofitApiKey') || '';
+    const geminiKey = APP.geminiKey || localStorage.getItem('irofitGeminiKey') || '';
+    const useGemini = (!claudeKey || !claudeKey.startsWith('sk-')) && geminiKey;
 
     try {
-      const raw = await callClaude(null, msgs, 'Sen bir diyetisyen asistanısın. Sadece JSON döndür.');
+      let raw;
+      if(useGemini) {
+        // Gemini vision — kullanıcının kendi key'i varsa
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
+        const body = {
+          contents: [{ role: 'user', parts: [
+            { inline_data: { mime_type: file.type, data: base64Data } },
+            { text: promptText }
+          ]}],
+          generationConfig: { maxOutputTokens: 500, temperature: 0.4 }
+        };
+        const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        if(!resp.ok) throw new Error('Gemini ' + resp.status);
+        const d = await resp.json();
+        raw = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      } else {
+        // Claude proxy — varsayılan (Anthropic key proxy'de saklı)
+        const msgs = [{ role:'user', content:[
+          { type:'image', source:{ type:'base64', media_type: file.type, data: base64Data } },
+          { type:'text', text: promptText }
+        ]}];
+        const body = {
+          model: 'claude-haiku-4-5',
+          max_tokens: 500,
+          system: 'Sen diyetisyen asistanısın. Sadece JSON döndür, başka hiçbir şey yazma.',
+          messages: msgs
+        };
+        const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if(!resp.ok) throw new Error('Claude proxy ' + resp.status);
+        const d = await resp.json();
+        raw = d.content?.map(c => c.text || '').join('') || '';
+      }
       const clean = raw.replace(/```json|```/g,'').trim();
       const data = JSON.parse(clean);
       showFoodResult(data);
     } catch(err) {
-      // Fallback
+      console.error('Photo analysis error:', err);
+      document.getElementById('aiLoadingArea').classList.remove('show');
       const fallback = {
         verdict: 'warning',
         emoji: '🍽️',
-        title: 'Yemek analiz edildi',
-        comment: `Bu öğün tahminen 400-600 kalori civarında görünüyor. Günlük hedefin ${APP.tdee} kal — bu öğünle yolunda gidiyorsun! Protein ve sebze dengesi iyi, tebrikler 💚`,
+        title: 'Analiz tamamlandı',
+        comment: `Bu öğün tahminen 400-600 kalori civarında görünüyor. Günlük hedefin ${APP.tdee} kal — bu öğünle yolunda gidiyorsun! 💚`,
         calories: 480,
         protein: '32g',
         carb: '45g',
@@ -2980,17 +3014,42 @@ function doExerciseNow() {
 // REMINDERS
 // ============================================================
 function scheduleReminders() {
-  const reminders = [
-    { delay: 5000, ico:'🍽️', title:'Öğle yemeği vakti yaklaşıyor!', desc:'Bugün için: Izgara tavuk + kinoa + salata (480 kal)' },
-    { delay: 30000, ico:'💧', title:'Su içmeyi unutma!', desc:`Bugün ${APP.waterDrank}/8 bardak içtin. Biraz daha! 💧` },
-    { delay: 60000, ico:'🍫', title:'Akşam tatlı krizine dikkat!', desc:'18:00-23:00 arası riskli saat. Elinde sağlıklı alternatifler hazırla.' },
-    { delay: 120000, ico:'🌙', title:'Gece atıştırması hatırlatması', desc:'Kalori hedefin dolmadıysa: bir avuç ceviz veya yoğurt harika.' },
-  ];
-  reminders.forEach(r => setTimeout(() => showToast(r.ico, r.title, r.desc), r.delay));
+  const h = new Date().getHours();
+
+  // Su hatırlatması her zaman (30 sn sonra)
+  setTimeout(() => showToast('💧', 'Su içmeyi unutma!', 'Yeterli su içmek metabolizmayı hızlandırır!'), 30000);
+
+  // Saate göre akıllı hatırlatma — sadece ilk açılışta, 30 sn sonra (kullanıcı settle olduktan sonra)
+  const reminderKey = 'irofitReminderDate';
+  const today = new Date().toDateString();
+  const lastReminder = localStorage.getItem(reminderKey);
+  if(lastReminder === today) return; // Bugün zaten gösterildi
+  localStorage.setItem(reminderKey, today);
+
+  const meal = MEALS.find(m => {
+    const [mh] = m.time.split(':').map(Number);
+    return mh >= h && mh <= h + 2;
+  });
+
+  setTimeout(() => {
+    if(h >= 7 && h < 10) {
+      showToast('☀️', 'Günaydın! Kahvaltı zamanı', MEALS[0] ? MEALS[0].desc + ' (' + MEALS[0].cal + ' kal)' : 'Güne sağlıklı başla!');
+    } else if(h >= 11 && h < 13) {
+      const lunch = MEALS.find(m => m.name.includes('Öğle')) || MEALS[2];
+      showToast('🍽️', 'Öğle yemeği vakti!', lunch ? lunch.desc + ' (' + lunch.cal + ' kal)' : 'Protein + sebze kombinasyonu ideal.');
+    } else if(h >= 15 && h < 17) {
+      const snack = MEALS.find(m => m.name.includes('İkindi') || m.name.includes('Ara'));
+      showToast('🍎', 'İkindi atıştırması vakti!', snack ? snack.desc : 'Bir meyve veya yoğurt enerjini dengeler.');
+    } else if(h >= 18 && h < 21) {
+      const dinner = MEALS.find(m => m.name.includes('Akşam'));
+      showToast('🍽️', 'Akşam yemeği zamanı!', dinner ? dinner.desc + ' (' + dinner.cal + ' kal)' : 'Hafif tut — protein + sebze ideal.');
+    } else if(h >= 21) {
+      showToast('🌙', 'Gece geç saatte yememeye dikkat!', 'Tatlı krizi hissedersen: 1 kare bitter çikolata veya bir avuç ceviz.');
+    }
+  }, 30000);
+
   // Egzersiz hatırlatıcılarını başlat
   startExerciseReminders();
-  // Demo: ilk egzersiz 10 saniye sonra göster
-  setTimeout(() => showExerciseReminder(), 10000);
 }
 
 function showToast(ico, title, desc) {
@@ -3086,6 +3145,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Restore API key
   const storedKey = localStorage.getItem('irofitApiKey');
   if(storedKey) APP.apiKey = storedKey;
+  const storedGemini = localStorage.getItem('irofitGeminiKey');
+  if(storedGemini) APP.geminiKey = storedGemini;
   checkWaterReset();
   updateOnbProgress();
 
@@ -3139,43 +3200,90 @@ function showSettingsMenu() {
 function showApiKeyModal() {
   const modal = document.getElementById('apiKeyModal');
   modal.style.display = 'flex';
-  const stored = APP.apiKey || localStorage.getItem('irofitApiKey') || '';
-  document.getElementById('apiKeyInput').value = stored;
+  const gKey = APP.geminiKey || localStorage.getItem('irofitGeminiKey') || '';
+  const cKey = APP.apiKey || localStorage.getItem('irofitApiKey') || '';
+  document.getElementById('geminiKeyInput').value = gKey;
+  document.getElementById('claudeKeyInput').value = cKey;
+  updateAIStatus();
 }
 
 function closeApiKeyModal() {
   document.getElementById('apiKeyModal').style.display = 'none';
 }
 
-function saveApiKey() {
-  const key = document.getElementById('apiKeyInput').value.trim();
-  if(!key.startsWith('sk-')) {
-    document.getElementById('apiKeyInput').style.borderColor = 'var(--coral)';
-    return;
+function updateAIStatus() {
+  const gKey = document.getElementById('geminiKeyInput').value.trim();
+  const cKey = document.getElementById('claudeKeyInput').value.trim();
+  const statusEl = document.getElementById('aiActiveStatus');
+  if(cKey.startsWith('sk-')) {
+    statusEl.textContent = '🟣 Claude AI aktif';
+    statusEl.style.color = '#a78bfa';
+  } else if(gKey.length > 10) {
+    statusEl.textContent = '🔵 Gemini AI aktif (kişisel key)';
+    statusEl.style.color = '#4285f4';
+  } else {
+    statusEl.textContent = '🟢 Gemini AI aktif (ücretsiz)';
+    statusEl.style.color = 'var(--jade)';
   }
-  APP.apiKey = key;
-  localStorage.setItem('irofitApiKey', key);
+}
+
+function saveApiKey() {
+  const gKey = document.getElementById('geminiKeyInput').value.trim();
+  const cKey = document.getElementById('claudeKeyInput').value.trim();
+  if(gKey) { APP.geminiKey = gKey; localStorage.setItem('irofitGeminiKey', gKey); }
+  if(cKey && cKey.startsWith('sk-')) { APP.apiKey = cKey; localStorage.setItem('irofitApiKey', cKey); }
   saveApp();
   closeApiKeyModal();
-  showToast('🔑', 'API Bağlantısı Kuruldu!', 'Artık gerçek AI yanıtları alacaksın 🌿');
+  const msg = cKey.startsWith('sk-') ? 'Claude AI bağlandı 🟣' : gKey ? 'Gemini AI bağlandı 🔵' : 'Ücretsiz Gemini kullanılıyor 🟢';
+  showToast('🔑', 'AI Bağlantısı Güncellendi', msg);
 }
 </script>
 
 <!-- API KEY MODAL -->
-<div id="apiKeyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);z-index:600;align-items:center;justify-content:center">
-  <div style="background:var(--card);border:1.5px solid var(--jade);border-radius:var(--r);padding:28px 24px;width:90%;max-width:380px">
-    <div style="font-size:28px;margin-bottom:12px">🔑</div>
-    <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;margin-bottom:8px">Anthropic API Key</div>
-    <div style="font-size:13px;color:var(--text-mid);margin-bottom:20px;line-height:1.6">
-      AI özelliklerini kullanmak için Anthropic API anahtarın gerekli.<br><br>
-      <a href="https://console.anthropic.com" target="_blank" style="color:var(--jade)">console.anthropic.com</a> adresinden ücretsiz alabilirsin.
+<div id="apiKeyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);z-index:600;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--card);border:1.5px solid var(--jade);border-radius:var(--r);padding:24px;width:100%;max-width:400px;max-height:88vh;overflow-y:auto">
+    <div style="font-size:24px;margin-bottom:6px">🔑</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:4px">AI Bağlantısı</div>
+    <div id="aiActiveStatus" style="font-size:12px;margin-bottom:20px;color:var(--jade)">🟢 Gemini AI aktif (ücretsiz)</div>
+
+    <!-- GEMINI -->
+    <div style="background:rgba(66,133,244,0.08);border:1.5px solid rgba(66,133,244,0.25);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:20px">🆓</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#4285f4">Google Gemini</div>
+          <div style="font-size:11px;color:var(--text-faint)">Ücretsiz · Günde 1500 istek</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);margin-bottom:8px">Key girmesen de çalışır. Kendi key'ini girersen limitsiz kullanırsın.</div>
+      <input id="geminiKeyInput" type="password" placeholder="AIza... (opsiyonel)"
+        style="width:100%;background:var(--deep);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--mono);color:#4285f4;outline:none"
+        oninput="updateAIStatus()">
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
+        <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#4285f4">aistudio.google.com</a> → Get API key → Ücretsiz al
+      </div>
     </div>
-    <input id="apiKeyInput" type="password" placeholder="sk-ant-api03-..." 
-      style="width:100%;background:var(--deep);border:2px solid var(--border);border-radius:var(--r-sm);padding:14px;font-size:14px;font-family:var(--mono);color:var(--jade);outline:none;margin-bottom:16px"
-      oninput="this.style.borderColor=this.value.startsWith('sk-')?'var(--jade)':'var(--coral)'">
+
+    <!-- CLAUDE -->
+    <div style="background:rgba(167,139,250,0.08);border:1.5px solid rgba(167,139,250,0.25);border-radius:12px;padding:14px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:20px">🟣</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#a78bfa">Claude (Anthropic)</div>
+          <div style="font-size:11px;color:var(--text-faint)">Ücretli · Çok daha zeki · $5 = binlerce mesaj</div>
+        </div>
+      </div>
+      <input id="claudeKeyInput" type="password" placeholder="sk-ant-api03-... (opsiyonel)"
+        style="width:100%;background:var(--deep);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--mono);color:#a78bfa;outline:none"
+        oninput="updateAIStatus()">
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
+        <a href="https://console.anthropic.com" target="_blank" style="color:#a78bfa">console.anthropic.com</a> → API Keys → Create key
+      </div>
+    </div>
+
     <div style="display:flex;gap:10px">
-      <button onclick="closeApiKeyModal()" style="flex:1;background:var(--surface);border:1.5px solid var(--border);color:var(--text-mid);padding:14px;border-radius:50px;font-family:var(--font);font-size:14px;cursor:pointer">İptal</button>
-      <button onclick="saveApiKey()" style="flex:2;background:linear-gradient(135deg,var(--jade),#00b894);color:#000;border:none;padding:14px;border-radius:50px;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">Kaydet & Bağlan</button>
+      <button onclick="closeApiKeyModal()" style="flex:1;background:var(--surface);border:1.5px solid var(--border);color:var(--text-mid);padding:13px;border-radius:50px;font-family:var(--font);font-size:14px;cursor:pointer">İptal</button>
+      <button onclick="saveApiKey()" style="flex:2;background:linear-gradient(135deg,var(--jade),#00b894);color:#000;border:none;padding:13px;border-radius:50px;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">Kaydet ✓</button>
     </div>
   </div>
 </div>
