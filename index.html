@@ -1447,7 +1447,7 @@ body::after {
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
           <div style="text-align:center">
-            <div style="font-size:22px;font-weight:800;color:var(--jade);letter-spacing:-1px" id="healthSteps">0</div>
+            <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:22px;font-weight:800;color:var(--jade);letter-spacing:-1px" id="healthSteps">0</div><div onclick="openStepInput()" style="font-size:11px;color:var(--text-faint);cursor:pointer;border-bottom:1px dashed var(--border)">düzenle</div></div>
             <div style="font-size:10px;color:var(--text-faint)">Adım</div>
           </div>
           <div style="text-align:center">
@@ -1876,13 +1876,16 @@ async function requestHealthPermission() {
 
 function startStepCounting() {
   if(healthWatcher) return;
-  let lastAcc = null, stepBuffer = 0, stepThreshold = 12;
-  let lastStepTime = 0;
-
   // Bugünkü kaydedilmiş adımları yükle
   const todayData = loadDailyHistory()[todayKey()];
-  if(todayData && todayData.steps) healthSteps = todayData.steps;
+  if(todayData && todayData.steps) { healthSteps = todayData.steps; healthCaloriesBurned = todayData.caloriesBurned || 0; }
+  updateHealthUI();
 
+  // Web'de adım sayımı kesin değil — kullanıcıya manuel giriş öner
+  // DeviceMotion varsa kaba tahmin yap, yoksa sadece manuel mod
+  if(typeof DeviceMotionEvent === 'undefined') { healthWatcher = true; return; }
+  
+  let lastAcc = null, stepThreshold = 11, lastStepTime = 0;
   healthWatcher = window.addEventListener('devicemotion', (e) => {
     const acc = e.accelerationIncludingGravity;
     if(!acc) return;
@@ -1891,18 +1894,29 @@ function startStepCounting() {
       const delta = Math.abs(mag - lastAcc);
       if(delta > stepThreshold) {
         const now = Date.now();
-        if(now - lastStepTime > 250) { // en fazla 4 adım/sn
+        if(now - lastStepTime > 300) {
           healthSteps++;
           lastStepTime = now;
           healthCaloriesBurned = Math.round(healthSteps * 0.04 * (APP.weight / 70));
           updateHealthUI();
-          // Her 100 adımda bir kaydet
-          if(healthSteps % 100 === 0) saveTodayHealth();
+          if(healthSteps % 50 === 0) saveTodayHealth();
         }
       }
     }
     lastAcc = mag;
   });
+}
+
+// Manuel adım girişi
+function openStepInput() {
+  const val = prompt('Bugünkü adım sayını gir:', healthSteps || '');
+  if(val === null) return;
+  const steps = parseInt(val);
+  if(isNaN(steps) || steps < 0) return;
+  healthSteps = steps;
+  healthCaloriesBurned = Math.round(steps * 0.04 * (APP.weight / 70));
+  updateHealthUI();
+  saveTodayHealth();
 }
 
 function saveTodayHealth() {
@@ -1923,7 +1937,7 @@ function updateHealthUI() {
   // Net kalori güncelle
   const netEl = document.getElementById('netCalories');
   if(netEl) {
-    const consumed = MEALS.filter(m=>m.status==='done').reduce((a,m)=>a+m.cal,0);
+    const consumed = getMeals().reduce((a,m)=>a+(m.aiAnalysis?m.aiAnalysis.calories:m.cal),0);
     netEl.textContent = Math.max(0, consumed - healthCaloriesBurned);
   }
   // Adım progress bar
@@ -2296,7 +2310,7 @@ function initApp() {
   document.getElementById('sBMI').textContent = bmi;
   document.getElementById('kcalGoal').textContent = APP.tdee;
 
-  const consumed = MEALS.filter(m => m.status === 'done').reduce((a,m) => a + m.cal, 0);
+  const consumed = getMeals().reduce((a,m) => a + (m.aiAnalysis ? m.aiAnalysis.calories : m.cal), 0);
   const remaining = APP.tdee - consumed;
   document.getElementById('sKcal').textContent = remaining;
   const pct = Math.round((consumed / APP.tdee) * 100);
@@ -2657,21 +2671,37 @@ function buildBlood() {
 async function refreshBloodAI() {
   const el = document.getElementById('bloodAiText');
   el.textContent = '⏳ AI yorum hazırlanıyor...';
-  const prompt = `Sen bir diyetisyen ve sağlık asistanısın. Aşağıdaki kan tahlili sonuçlarını analiz et ve kısa, sıcak, motive edici Türkçe bir yorum yaz. Eksikliklere odaklan ve hangi besinlerle giderilebileceğini söyle. Maksimum 5 cümle.
 
-Hasta: ${APP.name}, ${APP.age} yaş, ${APP.gender}
-D Vitamini: ${APP.vitd} ng/mL (düşük, normal >30)
-B12: ${APP.b12} pg/mL (düşük sınır, normal >300)
-Hemoglobin: ${APP.hemo} g/dL (normal)
-Glukoz: ${APP.glucose} mg/dL (normal)
-LDL: ${APP.ldl} mg/dL (normal)
-Ferritin: ${APP.ferritin} µg/L (normal)`;
+  // Gerçek tahlil verilerinden dinamik satırlar üret
+  const bloodData = getBloodData();
+  if(bloodData.length === 0) {
+    el.textContent = 'Henüz tahlil verisi girilmemiş. Onboarding ekranından veya Tahlil sekmesinden değerlerinizi ekleyebilirsiniz.';
+    return;
+  }
+  const abnormal = bloodData.filter(b => b.status !== 'ok');
+  const normal = bloodData.filter(b => b.status === 'ok');
+  const labLines = bloodData.map(b => `${b.name}: ${b.val} (${b.status === 'ok' ? 'normal' : b.status === 'high' ? 'YÜKSEK ⚠️' : 'DÜŞÜK ⚠️'})`).join('
+');
+
+  const prompt = `Sen bir diyetisyen ve sağlık asistanısın. Aşağıdaki gerçek kan tahlili sonuçlarını analiz et.
+Hasta: ${APP.name}, ${APP.age} yaş, ${APP.gender}, hedef: ${APP.goal}
+
+TAHLIL SONUÇLARI:
+${labLines}
+
+Anormal değerlere (⚠️) odaklanarak kısa, samimi, motive edici Türkçe bir yorum yaz. Hangi besinler/alışkanlıklar yardımcı olur? Maksimum 5 cümle. Sadece gerçek verilere dayan, uydurma.`;
 
   try {
     const resp = await callClaude(prompt, []);
     el.textContent = resp;
   } catch(e) {
-    el.textContent = `D Vitamini (${APP.vitd} ng/mL) ve B12 (${APP.b12} pg/mL) değerlerin normal aralığın altında. Bu senin enerji seviyeni ve ruh halini doğrudan etkiliyor. Planına somon, yumurta sarısı, mantar, kırmızı et ve süt ürünleri eklendi. Güneş ışığında günde 15 dk zaman geçirmen de D vitamini için çok önemli! Diğer değerlerin harika, tebrikler 🌟`;
+    // Fallback da gerçek veriye dayalı olsun
+    if(abnormal.length > 0) {
+      const issues = abnormal.map(b => `${b.name} ${b.status === 'high' ? 'yüksek' : 'düşük'} (${b.val})`).join(', ');
+      el.textContent = `Dikkat gerektiren değerlerin: ${issues}. Bunları düzeltmek için beslenme planın kişiselleştirildi. Detaylı öneri için chat'ten soru sorabilirsin.`;
+    } else {
+      el.textContent = `Tüm tahlil değerlerin normal aralıkta — bu harika! Mevcut beslenme düzenini korumaya devam et. 🌟`;
+    }
   }
 }
 
@@ -2679,34 +2709,9 @@ Ferritin: ${APP.ferritin} µg/L (normal)`;
 // PLAN PAGE
 // ============================================================
 function buildPlan() {
-  const el = document.getElementById('fullPlan');
-  const days = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi','Pazar'];
-  const today = days[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
-  let html = '';
-  days.forEach((d, i) => {
-    const isToday = d === today;
-    html += `
-      <div style="margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:${isToday?'var(--jade)':'var(--text-mid)'};margin-bottom:8px;display:flex;align-items:center;gap:6px">
-          ${d} ${isToday ? '<span style="font-size:10px;background:var(--jade-dim);border:1px solid rgba(0,212,170,0.3);color:var(--jade);padding:2px 8px;border-radius:50px;">Bugün</span>' : ''}
-        </div>
-        <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden">
-    `;
-    MEALS.forEach(m => {
-      html += `
-        <div style="padding:12px 16px;display:flex;gap:12px;border-bottom:1px solid var(--border)">
-          <div style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:44px">${m.time}</div>
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600">${m.name}</div>
-            <div style="font-size:11px;color:var(--text-mid);margin-top:1px">${m.desc}</div>
-          </div>
-          <div style="font-family:var(--mono);font-size:13px;color:var(--gold)">${m.cal}</div>
-        </div>
-      `;
-    });
-    html += `</div></div>`;
-  });
-  el.innerHTML = html;
+  // Plan sekmesi artık buildPlanMeals() ile yönetiliyor
+  // Bu fonksiyon initApp'ten çağrılıyor, planMeals elementini güncelle
+  buildPlanMeals();
 }
 
 // ============================================================
@@ -2822,7 +2827,7 @@ function initChat() {
   if(hour >= 18 && hour <= 23) {
     opening = `Merhaba ${APP.name.split(' ')[0]}! 🌙 Akşam saatlerinde buradayım. Eğer tatlı krizine girme tehlikesi varsa, seni uyarmak için hazırım 😄 Nasılsın bugün?`;
   } else if(hour >= 6 && hour < 12) {
-    opening = `Günaydın ${APP.name.split(' ')[0]}! ☀️ Bugün için harika bir plan hazırladım. İlk öğünün ${MEALS[0].time}'de — hazır mısın?`;
+    const firstMeal = getMeals()[0]; opening = `Günaydın ${APP.name.split(' ')[0]}! ☀️ Bugün için harika bir plan hazırladım. İlk öğünün ${firstMeal ? firstMeal.time+'\'de' : 'sabah'} — hazır mısın?`;
   } else {
     opening = `Merhaba ${APP.name.split(' ')[0]}! 🌿 Bugün nasıl gidiyor? Herhangi bir konuda yardım istersen buradayım.`;
   }
@@ -3000,13 +3005,7 @@ async function sendQuick(text) {
   } catch(e) {
     removeTypingIndicator();
     console.error('callClaude error:', e.message);
-    const fallbacks = {
-      'tatlı': `Tatlı krizini anlıyorum! 😄 Önce bir bardak su iç, 10 dk bekle. Hâlâ istiyorsan: 1 kare bitter çikolata, 3-4 hurma veya bir avuç meyve seçeneklerin var. Ama yediysen de tamam — yarın yeni bir gün! 💚`,
-      'moral': `Bugün zor gitti, anladım. Ama biliyorsun, mükemmel olman gerekmiyor — sadece ilerlemen yeterli. Küçük adımlar büyük değişimler yaratır. Yarın yeniden başlarsın ve bu da tamamen geçerli 🌿`,
-      'default': `Seni duydum! ${APP.name.split(' ')[0]}, planına bakıyorum ve iyi gidiyorsun. D vitamini eksikliğin için bugün D vitamini içeren yiyecekler yemeyi unutma — özellikle somon ve yumurta. Ne konuda yardım istiyorsun? 💚`
-    };
-    const key = Object.keys(fallbacks).find(k => text.toLowerCase().includes(k)) || 'default';
-    addAIMsg(fallbacks[key]);
+    addAIMsg(`⚠️ Şu an AI'ya ulaşamıyorum (${e.message.includes('fetch') ? 'internet bağlantısı' : 'sunucu hatası'}). Lütfen tekrar dene.`);
   }
   sendBtn.disabled = false;
 }
@@ -3340,23 +3339,20 @@ function scheduleReminders() {
   if(lastReminder === today) return; // Bugün zaten gösterildi
   localStorage.setItem(reminderKey, today);
 
-  const meal = MEALS.find(m => {
-    const [mh] = m.time.split(':').map(Number);
-    return mh >= h && mh <= h + 2;
-  });
-
+  const meals = getMeals();
   setTimeout(() => {
     if(h >= 7 && h < 10) {
-      showToast('☀️', 'Günaydın! Kahvaltı zamanı', MEALS[0] ? MEALS[0].desc + ' (' + MEALS[0].cal + ' kal)' : 'Güne sağlıklı başla!');
+      const m = meals[0];
+      showToast('☀️', 'Günaydın! Kahvaltı zamanı', m ? m.desc + ' (' + (m.aiAnalysis ? m.aiAnalysis.calories : m.cal) + ' kal)' : 'Güne sağlıklı başla!');
     } else if(h >= 11 && h < 13) {
-      const lunch = MEALS.find(m => m.name.includes('Öğle')) || MEALS[2];
-      showToast('🍽️', 'Öğle yemeği vakti!', lunch ? lunch.desc + ' (' + lunch.cal + ' kal)' : 'Protein + sebze kombinasyonu ideal.');
+      const m = meals.find(x => x.name.includes('Öğle')) || meals[1];
+      showToast('🍽️', 'Öğle yemeği vakti!', m ? m.desc + ' (' + (m.aiAnalysis ? m.aiAnalysis.calories : m.cal) + ' kal)' : 'Protein + sebze kombinasyonu ideal.');
     } else if(h >= 15 && h < 17) {
-      const snack = MEALS.find(m => m.name.includes('İkindi') || m.name.includes('Ara'));
-      showToast('🍎', 'İkindi atıştırması vakti!', snack ? snack.desc : 'Bir meyve veya yoğurt enerjini dengeler.');
+      const m = meals.find(x => x.type === 'snack');
+      showToast('🍎', 'Ara öğün vakti!', m ? m.desc : 'Bir meyve veya yoğurt enerjini dengeler.');
     } else if(h >= 18 && h < 21) {
-      const dinner = MEALS.find(m => m.name.includes('Akşam'));
-      showToast('🍽️', 'Akşam yemeği zamanı!', dinner ? dinner.desc + ' (' + dinner.cal + ' kal)' : 'Hafif tut — protein + sebze ideal.');
+      const m = meals.find(x => x.name.includes('Akşam')) || meals[meals.length-1];
+      showToast('🍽️', 'Akşam yemeği zamanı!', m ? m.desc + ' (' + (m.aiAnalysis ? m.aiAnalysis.calories : m.cal) + ' kal)' : 'Hafif tut — protein + sebze ideal.');
     } else if(h >= 21) {
       showToast('🌙', 'Gece geç saatte yememeye dikkat!', 'Tatlı krizi hissedersen: 1 kare bitter çikolata veya bir avuç ceviz.');
     }
