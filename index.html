@@ -2680,8 +2680,7 @@ async function refreshBloodAI() {
   }
   const abnormal = bloodData.filter(b => b.status !== 'ok');
   const normal = bloodData.filter(b => b.status === 'ok');
-  const labLines = bloodData.map(b => `${b.name}: ${b.val} (${b.status === 'ok' ? 'normal' : b.status === 'high' ? 'YÜKSEK ⚠️' : 'DÜŞÜK ⚠️'})`).join('
-');
+  const labLines = bloodData.map(b => `${b.name}: ${b.val} (${b.status === 'ok' ? 'normal' : b.status === 'high' ? 'YÜKSEK' : 'DÜŞÜK'})`).join('\n');
 
   const prompt = `Sen bir diyetisyen ve sağlık asistanısın. Aşağıdaki gerçek kan tahlili sonuçlarını analiz et.
 Hasta: ${APP.name}, ${APP.age} yaş, ${APP.gender}, hedef: ${APP.goal}
@@ -2827,7 +2826,7 @@ function initChat() {
   if(hour >= 18 && hour <= 23) {
     opening = `Merhaba ${APP.name.split(' ')[0]}! 🌙 Akşam saatlerinde buradayım. Eğer tatlı krizine girme tehlikesi varsa, seni uyarmak için hazırım 😄 Nasılsın bugün?`;
   } else if(hour >= 6 && hour < 12) {
-    const firstMeal = getMeals()[0]; opening = `Günaydın ${APP.name.split(' ')[0]}! ☀️ Bugün için harika bir plan hazırladım. İlk öğünün ${firstMeal ? firstMeal.time+'\'de' : 'sabah'} — hazır mısın?`;
+    const firstMeal = getMeals()[0]; opening = 'Günaydın ' + APP.name.split(' ')[0] + '! ☀️ Bugün için harika bir plan hazırladım. İlk öğünün ' + (firstMeal ? firstMeal.time + "\'de" : 'sabah') + ' — hazır mısın?';
   } else {
     opening = `Merhaba ${APP.name.split(' ')[0]}! 🌿 Bugün nasıl gidiyor? Herhangi bir konuda yardım istersen buradayım.`;
   }
