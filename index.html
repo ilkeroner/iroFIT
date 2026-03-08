@@ -2533,11 +2533,12 @@ async function saveMealEdit() {
   document.getElementById('mealEditResult').innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-faint);font-size:13px">Analiz ediliyor...</div>';
 
   try {
-    const promptText = `Bu yemeği analiz et${desc ? `:\n"${desc}"` : '.'}
+    const promptText = `Bu yemeği analiz et.
+${desc ? `Kullanıcının notu: "${desc}"` : 'Fotoğraftaki yemeği tanımla.'}
 Kullanıcı: ${APP.name}, ${APP.age} yaş, hedef: ${APP.goal}, günlük kalori: ${APP.tdee} kal.
 ${APP.ldl > 130 ? 'LDL yüksek.' : ''}${APP.uricAcid > 7.7 ? ' Ürik asit yüksek.' : ''}
 Sadece JSON döndür:
-{"verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
+{"detectedFood":"Fotoğraftan/notten tespit edilen yemek adı (kısa, Türkçe)","verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
 verdict: positive=saglikli, warning=dikkat, danger=kacin`;
 
     let raw = '';
@@ -2569,7 +2570,7 @@ verdict: positive=saglikli, warning=dikkat, danger=kacin`;
     const meals = getMeals();
     const idx = meals.findIndex(m => m.id === meal.id);
     if(idx !== -1) {
-      meals[idx].desc = desc || meals[idx].desc;
+      meals[idx].desc = analysis.detectedFood || desc || meals[idx].desc;
       meals[idx].time = time || meals[idx].time;
       meals[idx].aiAnalysis = analysis;
       meals[idx].cal = analysis.calories;
@@ -3105,12 +3106,12 @@ async function handleMealPhoto(input) {
     img.style.display = 'block';
 
     const mealCtx = window._currentMeal;
-    const promptText = `Bu yemek fotoğrafını analiz et.
-${mealCtx ? `Öğün: ${mealCtx.name}, planlanan: ${mealCtx.desc}, tahmini kalori: ${mealCtx.cal} kal.` : ''}
+    const promptText = `Bu yemek fotoğrafını analiz et. Fotoğraftaki yemeği Türkçe olarak tanımla.
+${mealCtx ? `Planlanan öğün: ${mealCtx.name} (${mealCtx.desc})` : ''}
 Kullanıcı: ${APP.name}, ${APP.age} yaş, günlük kalori hedefi ${APP.tdee} kal, hedef: ${APP.goal}.
 ${APP.ldl > 130 ? 'Not: LDL kolesterol yüksek.' : ''}${APP.uricAcid > 7.7 ? ' Ürik asit yüksek.' : ''}
 Sadece şu JSON formatında yanıt ver, başka hiçbir şey yazma:
-{"verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
+{"detectedFood":"Fotoğraftaki yemek adı (kısa, Türkçe)","verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
 verdict: positive=sağlıklı, warning=dikkat, danger=kaçın`;
 
     const geminiKey = APP.geminiKey || localStorage.getItem('irofitGeminiKey') || '';
@@ -3161,7 +3162,8 @@ verdict: positive=sağlıklı, warning=dikkat, danger=kaçın`;
       if(idx !== -1) {
         meals[idx].photo = 'data:image/jpeg;base64,' + base64Data;
         meals[idx].aiAnalysis = data;
-        meals[idx].cal = data.calories; // kaloriyi güncelle
+        meals[idx].cal = data.calories;
+        if(data.detectedFood) meals[idx].desc = data.detectedFood; // fotoğraftan tespit edilen yemek adı
         APP.meals = meals;
         saveApp();
         buildMeals(); // kartı güncelle
