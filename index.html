@@ -1,3 +1,7 @@
-<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="iröFIT"><meta name="application-name" content="iröFIT"><meta name="theme-color" content="#00d4aa"><title>iröFIT</title></head><body style="margin:0;background:#080c10;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:white;text-align:center"><div><div style="font-size:60px">🌿</div><div style="font-size:28px;font-weight:800;background:linear-gradient(135deg,#00d4aa,#5eb8ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">iröFIT</div><div style="color:#7a9db5;margin-top:8px;font-size:14px">Yükleniyor...</div></div></body></html>
+<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="iröFIT"><meta name="application-name" content="iröFIT"><meta name="theme-color" content="#00d4aa"><title>iröFIT</title><script>
+const APP_URL = 'https://raw.githubusercontent.com/ilkeroner/iroFIT/main/app.html';
+fetch(APP_URL).then(r=>r.text()).then(html=>{document.open();document.write(html);document.close();}).catch(()=>{document.body.innerHTML='<div style="color:white;text-align:center;padding:40px">Bağlantı hatası. Tekrar dene.</div>';});
+</script></head><body style="margin:0;background:#080c10;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div​​​​​​​​​​​​​​​​
+
 
 
