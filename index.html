@@ -1620,12 +1620,23 @@ body::after {
     <div class="sheet-handle"></div>
     <div class="sheet-title" id="photoSheetTitle">📸 Yemeğini Analiz Et</div>
     <div class="photo-zone" onclick="document.getElementById('photoFileInput').click()">
-      <input type="file" id="photoFileInput" accept="image/*" onchange="handleMealPhoto(this)">
-      <img id="photoPreviewImg">
-      <div id="photoZonePlaceholder">
+      <input type="file" id="photoFileInput" accept="image/*" style="display:none" onchange="handleMealPhoto(this)">
+      <input type="file" id="photoFileCamera" accept="image/*" capture="environment" style="display:none" onchange="handleMealPhoto(this)">
+      <img id="photoPreviewImg" style="display:none;width:100%;border-radius:12px;object-fit:cover;max-height:200px">
+      <div id="photoZonePlaceholder" style="display:flex;flex-direction:column;align-items:center;padding:20px;gap:12px">
         <div style="font-size:48px">📷</div>
-        <div class="photo-zone-txt">Fotoğraf yükle</div>
-        <div class="photo-zone-hint">AI anında analiz eder</div>
+        <div class="photo-zone-txt">Yemeğini fotoğrafla</div>
+        <div style="display:flex;gap:10px;width:100%">
+          <button onclick="event.stopPropagation();document.getElementById('photoFileCamera').click()" 
+            style="flex:1;background:var(--jade);color:#000;border:none;padding:12px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">
+            📸 Kamera
+          </button>
+          <button onclick="event.stopPropagation();document.getElementById('photoFileInput').click()" 
+            style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border);padding:12px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">
+            🖼️ Galeri
+          </button>
+        </div>
+        <div class="photo-zone-hint">AI kalori ve besin değerlerini hesaplar</div>
       </div>
     </div>
     <div class="ai-loading-area" id="aiLoadingArea">
@@ -2807,92 +2818,105 @@ function closePhotoOverlay() {
 async function handleMealPhoto(input) {
   const file = input.files[0];
   if(!file) return;
+  input.value = '';
 
-  // Preview
-  const reader = new FileReader();
-  reader.onload = async (e) => {
+  document.getElementById('aiLoadingArea').classList.add('show');
+  document.getElementById('foodResult').classList.remove('show');
+  document.getElementById('photoZonePlaceholder').style.display = 'none';
+
+  // iOS uyumlu: canvas ile yeniden boyutlandır
+  try {
+    const base64Data = await resizeImageForAI(file);
     const img = document.getElementById('photoPreviewImg');
-    img.src = e.target.result;
+    img.src = 'data:image/jpeg;base64,' + base64Data;
     img.style.display = 'block';
-    document.getElementById('photoZonePlaceholder').style.display = 'none';
 
-    document.getElementById('aiLoadingArea').classList.add('show');
-    document.getElementById('foodResult').classList.remove('show');
-
-    const base64Data = e.target.result.split(',')[1];
     const mealCtx = window._currentMeal;
     const promptText = `Bu yemek fotoğrafını analiz et.
 ${mealCtx ? `Öğün: ${mealCtx.name}, planlanan: ${mealCtx.desc}, tahmini kalori: ${mealCtx.cal} kal.` : ''}
 Kullanıcı: ${APP.name}, ${APP.age} yaş, günlük kalori hedefi ${APP.tdee} kal, hedef: ${APP.goal}.
-${APP.ldl > 130 ? 'Not: LDL kolesterol yüksek, yağlı yiyeceklere dikkat et.' : ''}
-${APP.uricAcid > 7.7 ? 'Not: Ürik asit yüksek, kırmızı et ve sakatatları işaretle.' : ''}
-
+${APP.ldl > 130 ? 'Not: LDL kolesterol yüksek.' : ''}${APP.uricAcid > 7.7 ? ' Ürik asit yüksek.' : ''}
 Sadece şu JSON formatında yanıt ver, başka hiçbir şey yazma:
 {"verdict":"positive","emoji":"🥗","title":"Kısa başlık","comment":"2-3 cümle samimi yorum","calories":400,"protein":"30g","carb":"45g","fat":"12g","tip":"Tek cümle öneri"}
-verdict değerleri: positive (sağlıklı), warning (dikkat), danger (kaçın)`;
+verdict: positive=sağlıklı, warning=dikkat, danger=kaçın`;
 
-    const claudeKey = APP.apiKey || localStorage.getItem('irofitApiKey') || '';
     const geminiKey = APP.geminiKey || localStorage.getItem('irofitGeminiKey') || '';
+    const claudeKey = APP.apiKey || localStorage.getItem('irofitApiKey') || '';
     const useGemini = (!claudeKey || !claudeKey.startsWith('sk-')) && geminiKey;
 
-    try {
-      let raw;
-      if(useGemini) {
-        // Gemini vision — kullanıcının kendi key'i varsa
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
-        const body = {
-          contents: [{ role: 'user', parts: [
-            { inline_data: { mime_type: file.type, data: base64Data } },
-            { text: promptText }
-          ]}],
-          generationConfig: { maxOutputTokens: 500, temperature: 0.4 }
-        };
-        const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        if(!resp.ok) throw new Error('Gemini ' + resp.status);
-        const d = await resp.json();
-        raw = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      } else {
-        // Claude proxy — varsayılan (Anthropic key proxy'de saklı)
-        const msgs = [{ role:'user', content:[
-          { type:'image', source:{ type:'base64', media_type: file.type, data: base64Data } },
-          { type:'text', text: promptText }
-        ]}];
-        const body = {
-          model: 'claude-haiku-4-5',
-          max_tokens: 500,
-          system: 'Sen diyetisyen asistanısın. Sadece JSON döndür, başka hiçbir şey yazma.',
-          messages: msgs
-        };
-        const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        if(!resp.ok) throw new Error('Claude proxy ' + resp.status);
-        const d = await resp.json();
-        raw = d.content?.map(c => c.text || '').join('') || '';
-      }
-      const clean = raw.replace(/```json|```/g,'').trim();
-      const data = JSON.parse(clean);
-      showFoodResult(data);
-    } catch(err) {
-      console.error('Photo analysis error:', err);
-      document.getElementById('aiLoadingArea').classList.remove('show');
-      const fallback = {
-        verdict: 'warning',
-        emoji: '🍽️',
-        title: 'Analiz tamamlandı',
-        comment: `Bu öğün tahminen 400-600 kalori civarında görünüyor. Günlük hedefin ${APP.tdee} kal — bu öğünle yolunda gidiyorsun! 💚`,
-        calories: 480,
-        protein: '32g',
-        carb: '45g',
-        fat: '18g',
-        tip: 'Yanına bir bardak su içmeyi unutma!'
+    let raw;
+    if(useGemini) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
+      const body = {
+        contents: [{ role:'user', parts:[
+          { inline_data: { mime_type: 'image/jpeg', data: base64Data } },
+          { text: promptText }
+        ]}],
+        generationConfig: { maxOutputTokens: 500, temperature: 0.4 }
       };
-      showFoodResult(fallback);
+      const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if(!resp.ok) throw new Error('Gemini ' + resp.status);
+      const d = await resp.json();
+      raw = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } else {
+      const msgs = [{ role:'user', content:[
+        { type:'image', source:{ type:'base64', media_type:'image/jpeg', data: base64Data } },
+        { type:'text', text: promptText }
+      ]}];
+      const body = {
+        model: 'claude-haiku-4-5',
+        max_tokens: 500,
+        system: 'Sen diyetisyen asistanısın. Sadece JSON döndür.',
+        messages: msgs
+      };
+      const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      if(!resp.ok) throw new Error('Claude ' + resp.status);
+      const d = await resp.json();
+      raw = d.content?.map(c => c.text||'').join('') || '';
     }
-  };
-  reader.readAsDataURL(file);
+
+    const clean = raw.replace(/```json|```/g,'').trim();
+    const data = JSON.parse(clean);
+    showFoodResult(data);
+
+  } catch(err) {
+    console.error('Photo analysis error:', err);
+    document.getElementById('aiLoadingArea').classList.remove('show');
+    showFoodResult({
+      verdict:'warning', emoji:'🍽️', title:'Analiz tamamlanamadı',
+      comment: err.message.includes('key') ? 'AI key gerekli. ⚙️ menüsünden Gemini key gir.' : 'Fotoğraf analiz edilemedi. Tekrar dene.',
+      calories: window._currentMeal?.cal || 400,
+      protein:'?', carb:'?', fat:'?',
+      tip:'Fotoğrafı daha iyi ışıkta çekmeyi dene.'
+    });
+  }
+}
+
+// iOS dahil tüm cihazlarda çalışan canvas tabanlı resize
+function resizeImageForAI(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1024;
+      let w = img.width, h = img.height;
+      if(w > MAX || h > MAX) {
+        if(w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+      resolve(base64);
+    };
+    img.onerror = () => reject(new Error('Fotoğraf okunamadı'));
+    img.src = url;
+  });
 }
 
 function showFoodResult(data) {
