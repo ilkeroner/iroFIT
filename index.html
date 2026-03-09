@@ -2007,6 +2007,7 @@ const DEFAULT_APP = {
   goal: 'Kilo ver',
   activity: 'Orta aktif',
   diet: 'Her şey',
+  allergies: [],
   wake: '07:00',
   sleep: '23:00',
   // Vitaminler & Mineraller
@@ -2296,12 +2297,28 @@ function getBloodData() {
 }
 const BLOOD_DATA = [];
 
-const RECOS = [
-  { em: '🥗', name: 'Akdeniz Salatası', cal: '280 kal', match: true },
-  { em: '🍳', name: 'Sebzeli Omlet', cal: '320 kal', match: true },
-  { em: '🐟', name: 'Izgara Somon', cal: '380 kal', match: true },
-  { em: '🥑', name: 'Avokado Tost', cal: '290 kal', match: false },
-  { em: '🫐', name: 'Smoothie Bowl', cal: '230 kal', match: true },
+const ALL_RECOS = [
+  // Et yiyenler
+  { em: '🥩', name: 'Izgara Kırmızı Et',    cal: '420 kal', diets: ['Her şey'],                       allergies: [] },
+  { em: '🍗', name: 'Izgara Tavuk',          cal: '320 kal', diets: ['Her şey','Paleo'],               allergies: [] },
+  { em: '🐟', name: 'Izgara Somon',          cal: '380 kal', diets: ['Her şey','Pescatarian','Paleo'], allergies: [] },
+  { em: '🥚', name: 'Haşlanmış Yumurta',    cal: '155 kal', diets: ['Her şey','Vejetaryen','Paleo','Pescatarian'], allergies: [] },
+  // Vejetaryen / Vegan
+  { em: '🥗', name: 'Akdeniz Salatası',     cal: '280 kal', diets: ['Her şey','Vegan','Vejetaryen','Pescatarian','Paleo'], allergies: [] },
+  { em: '🍳', name: 'Sebzeli Omlet',        cal: '320 kal', diets: ['Her şey','Vejetaryen','Paleo'], allergies: [] },
+  { em: '🥑', name: 'Avokado Tost',         cal: '290 kal', diets: ['Her şey','Vegan','Vejetaryen'], allergies: [] },
+  { em: '🫐', name: 'Smoothie Bowl',        cal: '230 kal', diets: ['Her şey','Vegan','Vejetaryen','Pescatarian'], allergies: [] },
+  { em: '🌱', name: 'Mercimek Çorbası',     cal: '210 kal', diets: ['Her şey','Vegan','Vejetaryen','Pescatarian'], allergies: [] },
+  { em: '🧆', name: 'Nohut (Haşlanmış)',    cal: '270 kal', diets: ['Her şey','Vegan','Vejetaryen','Pescatarian','Paleo'], allergies: [] },
+  { em: '🥦', name: 'Buharda Sebze Tabağı', cal: '180 kal', diets: ['Her şey','Vegan','Vejetaryen','Pescatarian','Paleo'], allergies: [] },
+  { em: '🫘', name: 'Siyah Fasulye Salatası',cal:'240 kal', diets: ['Her şey','Vegan','Vejetaryen','Pescatarian'], allergies: [] },
+  // Fıstık içerenler — allergy: ['🥜 Fıstık']
+  { em: '🥜', name: 'Fıstık Ezmeli Tost',   cal: '350 kal', diets: ['Her şey','Vegan','Vejetaryen'], allergies: ['🥜 Fıstık'] },
+  // Gluten içerenler — allergy: ['🌾 Gluten']
+  { em: '🍞', name: 'Tam Tahıllı Ekmek',    cal: '180 kal', diets: ['Her şey','Vegan','Vejetaryen'], allergies: ['🌾 Gluten'] },
+  // Laktoz içerenler — allergy: ['🥛 Laktoz']
+  { em: '🧀', name: 'Lor Peynirli Salata',  cal: '260 kal', diets: ['Her şey','Vejetaryen'],         allergies: ['🥛 Laktoz'] },
+  { em: '🥛', name: 'Yoğurt & Meyve',       cal: '200 kal', diets: ['Her şey','Vejetaryen'],         allergies: ['🥛 Laktoz'] },
 ];
 
 // ============================================================
@@ -2367,6 +2384,9 @@ function collectOnbData() {
   if(ac) APP.activity = ac.textContent.trim();
   const dc = document.querySelector('[data-group="diet"].on');
   if(dc) APP.diet = dc.textContent.trim();
+  const allergyChips = document.querySelectorAll('[data-group="allergy"].on');
+  const allergyList = Array.from(allergyChips).map(c => c.textContent.trim()).filter(t => t !== 'Yok');
+  APP.allergies = allergyList;
   APP.wake = document.getElementById('f_wake').value;
   APP.sleep = document.getElementById('f_sleep').value;
   function getField(id) { const el = document.getElementById(id); return (el && el.value !== '') ? parseFloat(el.value) : null; }
@@ -2973,14 +2993,30 @@ async function openZReport() {
 function buildRecos() {
   const el = document.getElementById('recoRow');
   el.innerHTML = '';
-  RECOS.forEach(r => {
+
+  const userDiet = APP.diet || 'Her şey';
+  const userAllergies = APP.allergies || [];
+
+  // Önce uygun olanları filtrele
+  const suitable = ALL_RECOS.filter(r => {
+    // Diyet uyumu: kullanıcının diyeti listedeyse göster
+    const dietOk = r.diets.includes(userDiet) || r.diets.includes('Her şey');
+    // Alerji: bu yiyecek kullanıcının alerjisi olan bir şey içeriyorsa gösterme
+    const allergyOk = r.allergies.length === 0 || !r.allergies.some(a => userAllergies.includes(a));
+    return dietOk && allergyOk;
+  });
+
+  // Max 5 göster
+  const shown = suitable.slice(0, 5);
+
+  shown.forEach(r => {
     const d = document.createElement('div');
     d.className = 'reco-pill';
     d.innerHTML = `
       <div class="reco-em">${r.em}</div>
       <div class="reco-n">${r.name}</div>
       <div class="reco-c">${r.cal}</div>
-      ${r.match ? '<div class="reco-tag">Sana Uygun</div>' : ''}
+      <div class="reco-tag">Sana Uygun</div>
     `;
     d.onclick = () => { sendQuick(`${r.name} hakkında ne düşünüyorsun? Benim için uygun mu?`); switchPage('pageChat','navChat'); };
     el.appendChild(d);
@@ -3455,7 +3491,7 @@ KULLANICI PROFİLİ:
 - ${APP.name}, ${APP.age} yaş, ${APP.gender}
 - Boy: ${APP.height} cm, Kilo: ${APP.weight} kg, BMI: ${(APP.weight/((APP.height/100)**2)).toFixed(1)}
 - Hedef: ${APP.goal}
-- Aktivite: ${APP.activity}, Beslenme: ${APP.diet}
+- Aktivite: ${APP.activity}, Beslenme: ${APP.diet}${APP.allergies && APP.allergies.length > 0 ? ', Alerjiler: ' + APP.allergies.join(', ') : ''}
 - Gunluk kalori hedefi: ${APP.tdee} kal
 
 KAN TAHLİL SONUCLARI:
