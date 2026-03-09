@@ -1885,7 +1885,13 @@ body::after {
 // ============================================================
 const SUPABASE_URL = 'https://bpkjjexmsfaerekecdgb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_u0dxVL0etJ3mh3knpXkqLA_KFt4FRHK';
-const _sb = (window.supabase?.createClient || window.supabaseJs?.createClient || (() => { throw new Error('Supabase SDK yüklenemedi'); }))(SUPABASE_URL, SUPABASE_KEY);
+let _sb = null;
+try {
+  const sbFactory = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient
+    : null;
+  if(sbFactory) _sb = sbFactory(SUPABASE_URL, SUPABASE_KEY);
+} catch(e) { console.warn('Supabase init failed:', e); }
 let _sbUser = null;
 
 let _authTab = 'login';
@@ -1906,6 +1912,7 @@ async function handleAuth() {
   const btn = document.getElementById('authBtn');
   const msg = document.getElementById('authMsg');
   if(!email || !password) { msg.textContent = 'E-posta ve şifre gerekli.'; return; }
+  if(!_sb) { msg.style.color='var(--coral)'; msg.textContent = 'Bağlantı hatası. Sayfayı yenile.'; return; }
   btn.disabled = true; btn.textContent = '⏳ Bekleniyor...'; msg.textContent = '';
   try {
     let result;
@@ -3083,6 +3090,7 @@ function saveBloodEdit() {
 }
 
 
+async function refreshBloodAI() {
   const el = document.getElementById('bloodAiText');
   el.textContent = '⏳ AI yorum hazırlanıyor...';
 
@@ -3893,7 +3901,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateOnbProgress();
 
   // Supabase session kontrolü
-  const { data: { session } } = await _sb.auth.getSession();
+  if(!_sb) {
+    // SDK yüklenemedi — auth ekranı göster, hata mesajı ver
+    goTo('authScreen');
+    const msg = document.getElementById('authMsg');
+    if(msg) { msg.style.color='var(--coral)'; msg.textContent = 'Bağlantı hatası. Sayfayı yenile.'; }
+    return;
+  }
+  let session = null;
+  try { const r = await _sb.auth.getSession(); session = r.data.session; } catch(e) { console.warn('Session check failed:', e); }
   if(session) {
     _sbUser = session.user;
     await loadFromSupabase();
