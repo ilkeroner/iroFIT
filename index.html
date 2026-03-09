@@ -1128,10 +1128,41 @@ body::after {
 }
 .mood-opt:hover, .mood-opt.sel { opacity: 1; transform: scale(1.2); }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
 <!-- ===== SPLASH ===== -->
+<!-- AUTH SCREEN -->
+<div class="screen" id="authScreen" style="background:var(--deep);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;min-height:100vh">
+  <div style="font-size:56px;margin-bottom:8px">🌿</div>
+  <div style="font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:4px">iröFIT</div>
+  <div style="font-size:13px;color:var(--text-mid);margin-bottom:40px">Sağlıklı yaşamın akıllı asistanı</div>
+
+  <div id="authBox" style="width:100%;max-width:380px">
+    <div style="display:flex;background:var(--surface);border-radius:50px;padding:4px;margin-bottom:24px">
+      <button id="tabLogin" onclick="showAuthTab('login')" style="flex:1;padding:10px;border:none;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);background:var(--jade);color:#000">Giriş Yap</button>
+      <button id="tabRegister" onclick="showAuthTab('register')" style="flex:1;padding:10px;border:none;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);background:transparent;color:var(--text-mid)">Kayıt Ol</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <input id="authEmail" type="email" placeholder="E-posta" autocomplete="email"
+        style="background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;font-size:15px;color:var(--text);font-family:var(--font);outline:none;width:100%;box-sizing:border-box">
+      <input id="authPassword" type="password" placeholder="Şifre (min. 6 karakter)" autocomplete="current-password"
+        style="background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;font-size:15px;color:var(--text);font-family:var(--font);outline:none;width:100%;box-sizing:border-box">
+      <div id="authMsg" style="font-size:13px;text-align:center;min-height:18px;color:var(--coral)"></div>
+      <button id="authBtn" onclick="handleAuth()"
+        style="background:var(--jade);color:#000;border:none;border-radius:50px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font);width:100%">
+        Giriş Yap
+      </button>
+    </div>
+
+    <div style="text-align:center;margin-top:20px;font-size:12px;color:var(--text-faint)">
+      Verileriniz güvenli şekilde saklanır.<br>Şifremi unuttum? <span onclick="handleForgotPassword()" style="color:var(--jade);cursor:pointer">Sıfırla</span>
+    </div>
+  </div>
+</div>
+
 <div class="screen active" id="splash">
   <div class="splash-bg-orb"></div>
   <div class="splash-content">
@@ -1751,6 +1782,100 @@ body::after {
 
 <script>
 // ============================================================
+// SUPABASE AUTH & SYNC
+// ============================================================
+const SUPABASE_URL = 'https://bpkjjexmsfaerekecdgb.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_u0dxVL0etJ3mh3knpXkqLA_KFt4FRHK';
+const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let _sbUser = null;
+
+let _authTab = 'login';
+function showAuthTab(tab) {
+  _authTab = tab;
+  const isLogin = tab === 'login';
+  document.getElementById('tabLogin').style.background = isLogin ? 'var(--jade)' : 'transparent';
+  document.getElementById('tabLogin').style.color = isLogin ? '#000' : 'var(--text-mid)';
+  document.getElementById('tabRegister').style.background = !isLogin ? 'var(--jade)' : 'transparent';
+  document.getElementById('tabRegister').style.color = !isLogin ? '#000' : 'var(--text-mid)';
+  document.getElementById('authBtn').textContent = isLogin ? 'Giriş Yap' : 'Kayıt Ol';
+  document.getElementById('authMsg').textContent = '';
+}
+
+async function handleAuth() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const btn = document.getElementById('authBtn');
+  const msg = document.getElementById('authMsg');
+  if(!email || !password) { msg.textContent = 'E-posta ve şifre gerekli.'; return; }
+  btn.disabled = true; btn.textContent = '⏳ Bekleniyor...'; msg.textContent = '';
+  try {
+    let result;
+    if(_authTab === 'login') {
+      result = await _sb.auth.signInWithPassword({ email, password });
+    } else {
+      result = await _sb.auth.signUp({ email, password });
+    }
+    if(result.error) throw result.error;
+    if(_authTab === 'register' && !result.data.session) {
+      msg.style.color = 'var(--jade)';
+      msg.textContent = 'Kayit basarili! E-postani dogrula, ardindan giris yap.';
+      btn.disabled = false; btn.textContent = 'Kayit Ol'; return;
+    }
+    _sbUser = result.data.user;
+    await loadFromSupabase();
+    afterAuth();
+  } catch(e) {
+    msg.style.color = 'var(--coral)';
+    msg.textContent = e.message.includes('Invalid') ? 'E-posta veya sifre hatali.' : e.message;
+    btn.disabled = false;
+    btn.textContent = _authTab === 'login' ? 'Giris Yap' : 'Kayit Ol';
+  }
+}
+
+async function handleForgotPassword() {
+  const email = document.getElementById('authEmail').value.trim();
+  const msg = document.getElementById('authMsg');
+  if(!email) { msg.style.color='var(--coral)'; msg.textContent = 'E-posta adresini gir.'; return; }
+  await _sb.auth.resetPasswordForEmail(email);
+  msg.style.color = 'var(--jade)';
+  msg.textContent = 'Sifre sifirlama maili gonderildi.';
+}
+
+async function loadFromSupabase() {
+  if(!_sbUser) return;
+  try {
+    const { data } = await _sb.from('user_data').select('data').eq('user_id', _sbUser.id).single();
+    if(data && data.data) Object.assign(APP, DEFAULT_APP, data.data);
+  } catch(e) { console.log('No remote data yet'); }
+}
+
+async function saveToSupabase() {
+  if(!_sbUser) return;
+  try {
+    const toSave = Object.assign({}, APP);
+    toSave.chatHistory = (APP.chatHistory || []).slice(-40);
+    await _sb.from('user_data').upsert({ user_id: _sbUser.id, data: toSave, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  } catch(e) { console.error('Supabase save:', e); }
+}
+
+function afterAuth() {
+  checkWaterReset();
+  if(APP.onboarded) {
+    goTo('app'); initApp(); scheduleReminders();
+    if(APP.healthPermission) requestHealthPermission();
+  } else {
+    goTo('splash');
+  }
+}
+
+async function authSignOut() {
+  await _sb.auth.signOut();
+  _sbUser = null;
+  localStorage.removeItem(STORE_KEY);
+  location.reload();
+}
+
+// ============================================================
 // STORAGE — tüm veriler tarayıcıda kalıcı olarak saklanır
 // ============================================================
 const STORE_KEY = 'irofitData_v1';
@@ -1807,6 +1932,9 @@ function saveApp() {
     toSave.chatHistory = APP.chatHistory.slice(-40);
     localStorage.setItem(STORE_KEY, JSON.stringify(toSave));
   } catch(e) {}
+  // Debounced Supabase sync
+  clearTimeout(saveApp._t);
+  saveApp._t = setTimeout(saveToSupabase, 2000);
 }
 
 // ── Günlük Tarih Geçmişi ──────────────────────────────────────
@@ -1964,12 +2092,18 @@ function updateHealthUI() {
 
 // Su sıfırlama
 function checkWaterReset() {
-  const today = new Date().toDateString();
-  if(APP.waterDate !== today) {
-    // Dünkü su kaydını sakla
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const hour = now.getHours();
+  // 06:00 itibariyle yeni gün sayılır
+  const dayKey = hour >= 6 ? todayStr : new Date(now - 86400000).toDateString();
+
+  if(APP.waterDate !== dayKey) {
     if(APP.waterDate) saveDailyEntry({ waterDrank: APP.waterDrank });
     APP.waterDrank = 0;
-    APP.waterDate = today;
+    APP.waterDate = dayKey;
+    // Öğünleri sıfırla — fotoğraf/analiz temizle, sadece 3 ana öğün kalsın
+    APP.meals = JSON.parse(JSON.stringify(DEFAULT_MEALS));
     saveApp();
   }
 }
@@ -3555,38 +3689,42 @@ function switchPage(pageId, navId) {
 // ============================================================
 // BOOT — kaydedilmiş veriye göre doğru ekrandan başla
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
-  // Restore API key
+document.addEventListener('DOMContentLoaded', async () => {
   const storedKey = localStorage.getItem('irofitApiKey');
   if(storedKey) APP.apiKey = storedKey;
   const storedGemini = localStorage.getItem('irofitGeminiKey');
   if(storedGemini) APP.geminiKey = storedGemini;
-  checkWaterReset();
   updateOnbProgress();
 
-  if(APP.onboarded) {
-    goTo('app');
-    initApp();
-    scheduleReminders();
-    // Sağlık takibi zaten aktifse yeniden başlat
-    if(APP.healthPermission) {
-      setTimeout(async () => {
-        const granted = await requestHealthPermission();
-        if(granted) {
-          const btn = document.getElementById('healthPermBtn');
-          if(btn) btn.style.display = 'none';
-          const card = document.getElementById('healthCard');
-          if(card) card.style.display = 'block';
-          document.getElementById('healthDate').textContent = new Date().toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
-          updateHealthUI();
-        }
-      }, 500);
+  // Supabase session kontrolü
+  const { data: { session } } = await _sb.auth.getSession();
+  if(session) {
+    _sbUser = session.user;
+    await loadFromSupabase();
+    checkWaterReset();
+    if(APP.onboarded) {
+      goTo('app'); initApp(); scheduleReminders();
+      if(APP.healthPermission) {
+        setTimeout(async () => {
+          const granted = await requestHealthPermission();
+          if(granted) {
+            const btn = document.getElementById('healthPermBtn');
+            if(btn) btn.style.display = 'none';
+            const card = document.getElementById('healthCard');
+            if(card) card.style.display = 'block';
+            document.getElementById('healthDate').textContent = new Date().toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+            updateHealthUI();
+          }
+        }, 500);
+      }
+      saveDailyEntry({ weight: APP.weight, tdee: APP.tdee, waterDrank: APP.waterDrank });
+      showToast('👋', 'Hos geldin ' + APP.name.split(' ')[0] + '!', 'Kaldigin yerden devam ediyorsun');
+    } else {
+      goTo('splash');
     }
-    // Bugünkü veriyi kaydet (gün başlangıcı)
-    saveDailyEntry({ weight: APP.weight, tdee: APP.tdee, waterDrank: APP.waterDrank });
-    showToast('👋', 'Hoş geldin ' + APP.name.split(' ')[0] + '!', 'Kaldığın yerden devam ediyorsun 🌿');
   } else {
-    goTo('splash');
+    // Oturum yok — auth ekranını göster
+    goTo('authScreen');
   }
 });
 
@@ -3605,6 +3743,9 @@ function showSettingsMenu() {
     </div>
     <div onclick="if(confirm('Tüm verilerini silip baştan başlamak istiyor musun?')){localStorage.clear();location.reload()}" style="padding:12px 16px;cursor:pointer;border-radius:8px;font-size:14px;display:flex;align-items:center;gap:10px;color:var(--coral)" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">
       🗑️ <span>Profili Sıfırla</span>
+    </div>
+    <div onclick="authSignOut()" style="padding:12px 16px;cursor:pointer;border-radius:8px;font-size:14px;display:flex;align-items:center;gap:10px;color:var(--text-mid)" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">
+      🚪 <span>Çıkış Yap</span>
     </div>
   `;
   document.body.appendChild(menu);
