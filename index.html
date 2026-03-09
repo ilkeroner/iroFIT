@@ -1740,7 +1740,16 @@ body::after {
       <button onclick="closeBloodEditModal()" style="background:none;border:none;color:var(--text-faint);font-size:22px;cursor:pointer;padding:0;line-height:1">×</button>
     </div>
 
-    <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;text-align:center">Sadece güncellemek istediğin değerleri gir. Boş bırakılan alanlar değişmez.</div>
+    <!-- Dosya yükleme alanı -->
+    <div style="background:var(--surface);border:1.5px dashed var(--jade);border-radius:var(--r);padding:16px;margin-bottom:16px;text-align:center;cursor:pointer;position:relative" onclick="document.getElementById('bloodEditFileInput').click()">
+      <input type="file" id="bloodEditFileInput" accept=".pdf,image/*" style="position:absolute;opacity:0;width:0;height:0" onchange="handleBloodEditUpload(this)">
+      <div style="font-size:24px;margin-bottom:6px">📄</div>
+      <div style="font-size:13px;font-weight:700;color:var(--jade)">PDF veya Görsel Yükle</div>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Tahlil belgesini yükle, değerler otomatik doldurulsun</div>
+    </div>
+    <div id="bloodEditUploadStatus" style="font-size:12px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--jade)"></div>
+
+    <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;text-align:center">veya aşağıdan manuel gir / düzenle — boş bırakılan alanlar değişmez</div>
 
     <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:8px 0 6px">— VİTAMİNLER & MİNERALLER —</div>
     <div class="grid2">
@@ -3059,7 +3068,123 @@ function buildBlood() {
   refreshBloodAI();
 }
 
+async function handleBloodEditUpload(input) {
+  const file = input.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('bloodEditUploadStatus');
+  statusEl.style.color = 'var(--jade)';
+  statusEl.textContent = '⏳ Tahlil okunuyor, değerler dolduruluyor...';
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result.split(',')[1];
+    const mediaType = file.type === 'application/pdf' ? 'application/pdf' : file.type;
+    try {
+      const contentBlock = mediaType === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+        : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } };
+
+      const resp = await fetch('https://irofit-api.vercel.app/api/claude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system: `Sen bir kan tahlili okuma uzmanısın. Verilen belgeden TÜM laboratuvar değerlerini çıkar ve SADECE aşağıdaki JSON formatında döndür. Başka hiçbir şey yazma, açıklama yapma, markdown kullanma. Sadece saf JSON.
+
+Eşleştirme rehberi:
+- vitd = D Vitamini / Vitamin D3 / 25-OH-Kolekalsiferol
+- b12 = Vitamin B12 / Kobalamin
+- ferritin = Ferritin
+- iron = Demir / Fe
+- zinc = Çinko / Zn
+- magnesium = Magnezyum / Mg
+- ldl = LDL-kolesterol / LDL
+- hdl = HDL-Kolesterol / HDL
+- triglycerides = Trigliserit / Trigliserid
+- glucose = Açlık Kan Şekeri / AKŞ / Glukoz
+- hba1c = Glikohem / HbA1C / HbA1c
+- insulin = İnsülin / Insulin
+- uricAcid = Ürik Asit / Uric Acid
+- crp = CRP / C-Reaktif Protein
+- tsh = TSH
+- freeT4 = Serbest T4 / Free T4 / fT4
+- antiTg = Anti tiroglobulin / Anti-TG / Anti TG
+- antiTpo = Anti-TPO / Tiroid peroksidaz
+- pth = PTH / Paratroid hormon
+- creatinine = Kreatinin / Creatinine
+- egfr = eGFR / GFR
+- ast = AST / SGOT
+- alt = ALT / SGPT
+- ggt = GGT / Gamma Glutamiltransferaz
+- alp = ALP / Alkalen fosfataz
+- albumin = Albumin
+- bilirubin = Bilirubin total / Total Bilirubin
+- hemo = Hemoglobin / HGB
+- wbc = WBC / Lökosit
+- rbc = RBC / Eritrosit
+- plt = PLT / Trombosit
+- hct = HCT / Hematokrit
+- mcv = MCV
+- mch = MCH
+- mchc = MCHC
+- sodium = Sodyum / Na
+- potassium = Potasyum / K
+- calcium = Kalsiyum / Ca
+- phosphorus = Fosfor / İnorganik fosfor`,
+          messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: 'Bu kan tahlilindeki tüm değerleri JSON olarak çıkar: {"vitd":null,"b12":null,"ferritin":null,"iron":null,"zinc":null,"magnesium":null,"ldl":null,"hdl":null,"triglycerides":null,"glucose":null,"hba1c":null,"insulin":null,"uricAcid":null,"crp":null,"tsh":null,"freeT4":null,"antiTg":null,"antiTpo":null,"pth":null,"creatinine":null,"egfr":null,"ast":null,"alt":null,"ggt":null,"alp":null,"albumin":null,"bilirubin":null,"hemo":null,"wbc":null,"rbc":null,"plt":null,"hct":null,"mcv":null,"mch":null,"mchc":null,"sodium":null,"potassium":null,"calcium":null,"phosphorus":null}' }] }]
+        })
+      });
+      const data = await resp.json();
+      const text = data.content.map(c => c.text || '').join('').trim();
+      const cleanText = text.replace(/^```[\w]*\n?/,'').replace(/\n?```$/,'').trim();
+      const parsed = JSON.parse(cleanText);
+
+      // Her dosya yüklemesinde: okunan değerleri inputlara yaz, APP'e de aktar
+      const fieldMap = {
+        vitd:'be_vitd', b12:'be_b12', ferritin:'be_ferritin', iron:'be_iron', zinc:'be_zinc', magnesium:'be_magnesium',
+        ldl:'be_ldl', hdl:'be_hdl', triglycerides:'be_triglycerides', glucose:'be_glucose', hba1c:'be_hba1c',
+        insulin:'be_insulin', uricAcid:'be_uricAcid', crp:'be_crp',
+        tsh:'be_tsh', freeT4:'be_freeT4', antiTg:'be_antiTg', antiTpo:'be_antiTpo',
+        creatinine:'be_creatinine', egfr:'be_egfr', ast:'be_ast', alt:'be_alt', ggt:'be_ggt', alp:'be_alp',
+        albumin:'be_albumin', bilirubin:'be_bilirubin',
+        hemo:'be_hemo', wbc:'be_wbc', rbc:'be_rbc', plt:'be_plt', hct:'be_hct', mcv:'be_mcv',
+        sodium:'be_sodium', potassium:'be_potassium', calcium:'be_calcium', phosphorus:'be_phosphorus'
+      };
+
+      let filledCount = 0;
+      Object.entries(fieldMap).forEach(([key, inputId]) => {
+        if(parsed[key] !== null && parsed[key] !== undefined) {
+          const el = document.getElementById(inputId);
+          if(el) el.value = parsed[key];
+          APP[key] = parsed[key];
+          filledCount++;
+        }
+      });
+
+      saveApp();
+      buildBlood();
+      updateMainAlert();
+      statusEl.style.color = 'var(--jade)';
+      statusEl.textContent = '✅ ' + file.name + ' — ' + filledCount + ' değer okundu ve formu dolduruldu!';
+      // input'u sıfırla — aynı dosyayı tekrar yükleyebilmek için
+      input.value = '';
+    } catch(err) {
+      console.error('Blood edit upload error:', err);
+      statusEl.style.color = 'var(--coral)';
+      statusEl.textContent = '❌ Okuma başarısız: ' + err.message.substring(0,60);
+      input.value = '';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
 function openBloodEditModal() {
+  // Upload status temizle
+  const statusEl = document.getElementById('bloodEditUploadStatus');
+  if(statusEl) statusEl.textContent = '';
+  const fileInput = document.getElementById('bloodEditFileInput');
+  if(fileInput) fileInput.value = '';
   // Mevcut değerleri inputlara doldur
   const fields = ['vitd','b12','ferritin','iron','zinc','magnesium',
     'ldl','hdl','triglycerides','glucose','hba1c','insulin','uricAcid','crp',
