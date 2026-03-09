@@ -3505,6 +3505,19 @@ function buildSystemPrompt() {
   const currentTime = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'});
   const currentDate = now.toLocaleDateString('tr-TR', {weekday:'long', day:'numeric', month:'long'});
 
+  // Bugünkü öğün özeti
+  const meals = getMeals();
+  const analyzedMeals = meals.filter(m => m.aiAnalysis);
+  const mealLines = meals.map(m => {
+    const cal = m.aiAnalysis ? m.aiAnalysis.calories : m.cal;
+    const desc = m.aiAnalysis ? (m.aiAnalysis.detectedFood || m.desc) : m.desc;
+    const tag = m.aiAnalysis ? '✓ yendi' : 'planlandı';
+    return `  - ${m.name} (${m.time}): ${desc} — ${cal} kal [${tag}]`;
+  }).join('\n');
+  const totalConsumed = meals.reduce((a,m) => a + (m.aiAnalysis ? m.aiAnalysis.calories : 0), 0);
+  const totalPlanned  = meals.reduce((a,m) => a + (m.aiAnalysis ? m.aiAnalysis.calories : m.cal), 0);
+  const remaining = APP.tdee - totalPlanned;
+
   return `Sen iröFIT - ${APP.name}'in cep telefonu uygulamasında çalışan kişisel sağlık asistanısın.
 
 ŞU ANKİ ZAMAN: ${currentDate}, saat ${currentTime}
@@ -3515,7 +3528,15 @@ KULLANICI:
 - Boy/Kilo: ${APP.height} cm / ${APP.weight} kg
 - Hedef: ${APP.goal}
 - Beslenme: ${APP.diet}${APP.allergies && APP.allergies.length > 0 ? ', Alerji: ' + APP.allergies.join(', ') : ''}
-- Günlük kalori: ${APP.tdee} kal
+- Günlük kalori hedefi: ${APP.tdee} kal
+
+BUGÜNKÜ ÖĞÜNLER VE KALORİ:
+${mealLines}
+→ Bugün yenen kalori (AI analiz): ${totalConsumed} kal
+→ Toplam (plan dahil): ${totalPlanned} kal
+→ Hedefe kalan: ${remaining > 0 ? remaining + ' kal açık' : Math.abs(remaining) + ' kal aşıldı ⚠️'}
+→ Su: ${APP.waterDrank} / 8 bardak
+Kalori, öğün veya su sorularında bu veriyi kullan — uydurma.
 
 KAN TAHLİLİ:
 ${bloodLines.length > 0 ? bloodLines.join('\n') : 'Girilmemiş.'}
