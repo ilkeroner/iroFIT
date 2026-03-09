@@ -1443,11 +1443,11 @@ body::after {
     <!-- HOME -->
     <div class="page active" id="pageHome">
       <!-- Alert -->
-      <div class="alert-strip" id="mainAlert">
-        <div class="alert-ico">⚠️</div>
+      <div class="alert-strip" id="mainAlert" style="display:none">
+        <div class="alert-ico" id="mainAlertIco">⚠️</div>
         <div class="alert-body">
-          <div class="alert-title">D Vitamini & B12 Eksikliği</div>
-          <div class="alert-text">Tahlillerine göre bu değerlerin düşük. Planın buna göre güncellendi; öğünlerde D vitamini içeren besinler ön plana çıkarıldı.</div>
+          <div class="alert-title" id="mainAlertTitle"></div>
+          <div class="alert-text" id="mainAlertText"></div>
         </div>
       </div>
 
@@ -1592,7 +1592,10 @@ body::after {
     <div class="page" id="pageBlood">
       <div class="section-head" style="margin-top:4px">
         <div class="section-h">Tahlil Sonuçların</div>
-        <span class="section-more" onclick="refreshBloodAI()">AI Yorum ↻</span>
+        <div style="display:flex;gap:8px">
+          <button onclick="openBloodEditModal()" style="background:var(--surface);border:1.5px solid var(--border);color:var(--text);padding:7px 14px;border-radius:50px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">✏️ Güncelle</button>
+          <span class="section-more" onclick="refreshBloodAI()">AI Yorum ↻</span>
+        </div>
       </div>
       <div class="blood-card">
         <div class="blood-card-head">🔬 Tam Kan Tahlili</div>
@@ -1729,7 +1732,103 @@ body::after {
   </div>
 </div>
 
-<!-- WEIGHT OVERLAY -->
+<!-- BLOOD EDIT MODAL -->
+<div class="meal-edit-modal" id="bloodEditModal" onclick="if(event.target===this)closeBloodEditModal()">
+  <div class="meal-edit-sheet" style="max-height:88vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;position:sticky;top:0;background:var(--card);z-index:2;padding-bottom:8px">
+      <div style="font-size:15px;font-weight:700">🔬 Tahlil Değerlerini Güncelle</div>
+      <button onclick="closeBloodEditModal()" style="background:none;border:none;color:var(--text-faint);font-size:22px;cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+
+    <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;text-align:center">Sadece güncellemek istediğin değerleri gir. Boş bırakılan alanlar değişmez.</div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:8px 0 6px">— VİTAMİNLER & MİNERALLER —</div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">D Vitamini (ng/mL)</span><input class="finput" type="number" id="be_vitd" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">B12 (pg/mL)</span><input class="finput" type="number" id="be_b12"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Ferritin (ng/mL)</span><input class="finput" type="number" id="be_ferritin" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">Demir/Fe (ug/dL)</span><input class="finput" type="number" id="be_iron"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Çinko (ug/dL)</span><input class="finput" type="number" id="be_zinc" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">Magnezyum (mg/dL)</span><input class="finput" type="number" id="be_magnesium" step="0.01"></div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:12px 0 6px">— KOLESTEROL & METABOLİZMA —</div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">LDL Kolesterol</span><input class="finput" type="number" id="be_ldl"></div>
+      <div class="fgroup"><span class="flabel">HDL Kolesterol</span><input class="finput" type="number" id="be_hdl"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Trigliserit (mg/dL)</span><input class="finput" type="number" id="be_triglycerides"></div>
+      <div class="fgroup"><span class="flabel">Açlık Glukozu (mg/dL)</span><input class="finput" type="number" id="be_glucose"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">HbA1c (%)</span><input class="finput" type="number" id="be_hba1c" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">İnsülin (uU/mL)</span><input class="finput" type="number" id="be_insulin" step="0.1"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Ürik Asit (mg/dL)</span><input class="finput" type="number" id="be_uricAcid" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">CRP (mg/dL)</span><input class="finput" type="number" id="be_crp" step="0.01"></div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:12px 0 6px">— TİROİD & HORMONLAR —</div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">TSH (uIU/mL)</span><input class="finput" type="number" id="be_tsh" step="0.01"></div>
+      <div class="fgroup"><span class="flabel">Serbest T4 (ng/dL)</span><input class="finput" type="number" id="be_freeT4" step="0.01"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Anti-TG (IU/mL)</span><input class="finput" type="number" id="be_antiTg" step="0.01"></div>
+      <div class="fgroup"><span class="flabel">Anti-TPO (IU/mL)</span><input class="finput" type="number" id="be_antiTpo" step="0.01"></div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:12px 0 6px">— BÖBREK & KARACİĞER —</div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Kreatinin (mg/dL)</span><input class="finput" type="number" id="be_creatinine" step="0.01"></div>
+      <div class="fgroup"><span class="flabel">eGFR</span><input class="finput" type="number" id="be_egfr"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">AST/SGOT (U/L)</span><input class="finput" type="number" id="be_ast"></div>
+      <div class="fgroup"><span class="flabel">ALT/SGPT (U/L)</span><input class="finput" type="number" id="be_alt"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">GGT (U/L)</span><input class="finput" type="number" id="be_ggt"></div>
+      <div class="fgroup"><span class="flabel">ALP (U/L)</span><input class="finput" type="number" id="be_alp"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Albumin (g/dL)</span><input class="finput" type="number" id="be_albumin" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">Bilirubin Total</span><input class="finput" type="number" id="be_bilirubin" step="0.01"></div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:12px 0 6px">— HEMATOLOJİ —</div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Hemoglobin (g/dL)</span><input class="finput" type="number" id="be_hemo" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">WBC (K/uL)</span><input class="finput" type="number" id="be_wbc" step="0.01"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">RBC (M/uL)</span><input class="finput" type="number" id="be_rbc" step="0.01"></div>
+      <div class="fgroup"><span class="flabel">PLT Trombosit</span><input class="finput" type="number" id="be_plt"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Hematokrit (%)</span><input class="finput" type="number" id="be_hct" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">MCV (fl)</span><input class="finput" type="number" id="be_mcv" step="0.1"></div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--jade);letter-spacing:.08em;margin:12px 0 6px">— ELEKTROLİTLER —</div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Sodyum (mmol/L)</span><input class="finput" type="number" id="be_sodium"></div>
+      <div class="fgroup"><span class="flabel">Potasyum (mmol/L)</span><input class="finput" type="number" id="be_potassium" step="0.1"></div>
+    </div>
+    <div class="grid2">
+      <div class="fgroup"><span class="flabel">Kalsiyum (mg/dL)</span><input class="finput" type="number" id="be_calcium" step="0.1"></div>
+      <div class="fgroup"><span class="flabel">Fosfor (mg/dL)</span><input class="finput" type="number" id="be_phosphorus" step="0.1"></div>
+    </div>
+
+    <button onclick="saveBloodEdit()" style="width:100%;margin-top:20px;background:var(--jade);color:#000;border:none;border-radius:50px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">💾 Kaydet & Güncelle</button>
+  </div>
+</div>
 <div id="weightOverlay">
   <div class="weight-popup">
     <div class="wp-title">⚖️ Kilo Güncelle</div>
@@ -2864,6 +2963,59 @@ function buildRecos() {
 }
 
 // ============================================================
+// ANA SAYFA ALERT — tahlil sonuçlarına göre dinamik
+// ============================================================
+function updateMainAlert() {
+  const alert = document.getElementById('mainAlert');
+  if(!alert) return;
+  const data = getBloodData();
+  if(data.length === 0) { alert.style.display = 'none'; return; }
+
+  const abnormal = data.filter(b => b.status !== 'ok');
+  if(abnormal.length === 0) {
+    alert.style.display = 'none'; return;
+  }
+
+  const low  = abnormal.filter(b => b.status === 'low');
+  const high = abnormal.filter(b => b.status === 'high');
+
+  let title = '';
+  let text  = '';
+  let ico   = '⚠️';
+
+  // Başlık
+  const allNames = abnormal.map(b => b.name).join(', ');
+  if(low.length && high.length) {
+    title = 'Dikkat: Düşük & Yüksek Değerler';
+    ico = '⚠️';
+  } else if(high.length) {
+    title = high.length === 1 ? high[0].name + ' Yüksek' : high.length + ' Değer Yüksek';
+    ico = '🔺';
+  } else {
+    title = low.length === 1 ? low[0].name + ' Düşük' : low.length + ' Değer Düşük';
+    ico = '🔻';
+  }
+
+  // Detay
+  const parts = [];
+  if(high.length) parts.push('Yüksek: ' + high.map(b => b.name + ' (' + b.val + ')').join(', '));
+  if(low.length)  parts.push('Düşük: '  + low.map(b => b.name  + ' (' + b.val + ')').join(', '));
+  text = parts.join(' · ') + '. Tahlil sekmesinde detaylı AI yorumuna bakabilirsin.';
+
+  document.getElementById('mainAlertIco').textContent   = ico;
+  document.getElementById('mainAlertTitle').textContent = title;
+  document.getElementById('mainAlertText').textContent  = text;
+
+  // Renk: yüksek → coral, sadece düşük → gold
+  alert.style.borderColor = high.length ? 'var(--coral)' : 'var(--gold)';
+  alert.style.background  = high.length
+    ? 'rgba(255,99,88,0.08)' : 'rgba(255,201,71,0.08)';
+  document.getElementById('mainAlertIco').style.color = high.length ? 'var(--coral)' : 'var(--gold)';
+  document.getElementById('mainAlertTitle').style.color = high.length ? 'var(--coral)' : 'var(--gold)';
+  alert.style.display = 'flex';
+}
+
+// ============================================================
 // BLOOD
 // ============================================================
 function buildBlood() {
@@ -2887,10 +3039,50 @@ function buildBlood() {
   });
 
   // AI blood interpretation
+  updateMainAlert();
   refreshBloodAI();
 }
 
-async function refreshBloodAI() {
+function openBloodEditModal() {
+  // Mevcut değerleri inputlara doldur
+  const fields = ['vitd','b12','ferritin','iron','zinc','magnesium',
+    'ldl','hdl','triglycerides','glucose','hba1c','insulin','uricAcid','crp',
+    'tsh','freeT4','antiTg','antiTpo',
+    'creatinine','egfr','ast','alt','ggt','alp','albumin','bilirubin',
+    'hemo','wbc','rbc','plt','hct','mcv',
+    'sodium','potassium','calcium','phosphorus'];
+  fields.forEach(f => {
+    const el = document.getElementById('be_' + f);
+    if(el && APP[f] !== null && APP[f] !== undefined) el.value = APP[f];
+  });
+  document.getElementById('bloodEditModal').classList.add('open');
+}
+
+function closeBloodEditModal() {
+  document.getElementById('bloodEditModal').classList.remove('open');
+}
+
+function saveBloodEdit() {
+  const fields = ['vitd','b12','ferritin','iron','zinc','magnesium',
+    'ldl','hdl','triglycerides','glucose','hba1c','insulin','uricAcid','crp',
+    'tsh','freeT4','antiTg','antiTpo',
+    'creatinine','egfr','ast','alt','ggt','alp','albumin','bilirubin',
+    'hemo','wbc','rbc','plt','hct','mcv',
+    'sodium','potassium','calcium','phosphorus'];
+  fields.forEach(f => {
+    const el = document.getElementById('be_' + f);
+    if(!el) return;
+    const v = el.value.trim();
+    APP[f] = v !== '' ? parseFloat(v) : null;
+  });
+  saveApp();
+  closeBloodEditModal();
+  buildBlood();       // tahlil sayfasını güncelle
+  updateMainAlert();  // ana sayfa alert'ini güncelle
+  showToast('✓', 'Tahlil güncellendi', 'Değerler kaydedildi');
+}
+
+
   const el = document.getElementById('bloodAiText');
   el.textContent = '⏳ AI yorum hazırlanıyor...';
 
