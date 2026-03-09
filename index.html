@@ -1977,7 +1977,18 @@ function afterAuth() {
   checkWaterReset();
   if(APP.onboarded) {
     goTo('app'); initApp(); scheduleReminders();
-    if(APP.healthPermission) requestHealthPermission();
+    if(APP.healthPermission) {
+      setTimeout(() => {
+        startStepCounting();
+        const btn = document.getElementById('healthPermBtn');
+        if(btn) btn.style.display = 'none';
+        const card = document.getElementById('healthCard');
+        if(card) card.style.display = 'block';
+        const dateEl = document.getElementById('healthDate');
+        if(dateEl) dateEl.textContent = new Date().toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+        updateHealthUI();
+      }, 500);
+    }
   } else {
     goTo('splash');
   }
@@ -2108,22 +2119,27 @@ let healthCaloriesBurned = 0;
 let healthWatcher = null;
 
 async function requestHealthPermission() {
-  // Web Tarayıcısı: DeviceMotion API (adım tahmini için)
-  // Android Chrome: Sensor API + DeviceMotionEvent
-  if(APP.healthPermission) { startStepCounting(); return true; }
+  // Daha önce izin verilmişse direkt başlat — iOS dahil tekrar sorma
+  if(APP.healthPermission) {
+    startStepCounting();
+    return true;
+  }
 
+  // İlk kez izin iste
   return new Promise(resolve => {
-    // iOS 13+ için izin gerekli
     if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      // iOS 13+ — kullanıcı etkileşimi gerektirir, ilk kez sorulur
       DeviceMotionEvent.requestPermission()
         .then(state => {
           if(state === 'granted') {
             APP.healthPermission = true; saveApp();
             startStepCounting(); resolve(true);
-          } else { resolve(false); }
+          } else {
+            resolve(false);
+          }
         }).catch(() => resolve(false));
     } else if(typeof DeviceMotionEvent !== 'undefined') {
-      // Android / diğer — izin otomatik
+      // Android / diğer — izin diyalogu yok, otomatik
       APP.healthPermission = true; saveApp();
       startStepCounting(); resolve(true);
     } else {
@@ -4093,16 +4109,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(APP.onboarded) {
       goTo('app'); initApp(); scheduleReminders();
       if(APP.healthPermission) {
-        setTimeout(async () => {
-          const granted = await requestHealthPermission();
-          if(granted) {
-            const btn = document.getElementById('healthPermBtn');
-            if(btn) btn.style.display = 'none';
-            const card = document.getElementById('healthCard');
-            if(card) card.style.display = 'block';
-            document.getElementById('healthDate').textContent = new Date().toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
-            updateHealthUI();
-          }
+        setTimeout(() => {
+          // APP.healthPermission true ise izin zaten verilmiş — sadece sayacı başlat
+          startStepCounting();
+          const btn = document.getElementById('healthPermBtn');
+          if(btn) btn.style.display = 'none';
+          const card = document.getElementById('healthCard');
+          if(card) card.style.display = 'block';
+          const dateEl = document.getElementById('healthDate');
+          if(dateEl) dateEl.textContent = new Date().toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+          updateHealthUI();
         }, 500);
       }
       saveDailyEntry({ weight: APP.weight, tdee: APP.tdee, waterDrank: APP.waterDrank });
