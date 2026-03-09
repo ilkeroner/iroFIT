@@ -1786,7 +1786,7 @@ body::after {
 // ============================================================
 const SUPABASE_URL = 'https://bpkjjexmsfaerekecdgb.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_u0dxVL0etJ3mh3knpXkqLA_KFt4FRHK';
-const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const _sb = (window.supabase?.createClient || window.supabaseJs?.createClient || (() => { throw new Error('Supabase SDK yüklenemedi'); }))(SUPABASE_URL, SUPABASE_KEY);
 let _sbUser = null;
 
 let _authTab = 'login';
@@ -2093,16 +2093,18 @@ function updateHealthUI() {
 // Su sıfırlama
 function checkWaterReset() {
   const now = new Date();
-  const todayStr = now.toDateString();
   const hour = now.getHours();
-  // 06:00 itibariyle yeni gün sayılır
-  const dayKey = hour >= 6 ? todayStr : new Date(now - 86400000).toDateString();
+  // 06:00'dan önce hâlâ dünün günü sayılır
+  const refDate = hour >= 6 ? now : new Date(now.getTime() - 86400000);
+  const dayKey = refDate.getFullYear() + '-' +
+    String(refDate.getMonth()+1).padStart(2,'0') + '-' +
+    String(refDate.getDate()).padStart(2,'0');
 
   if(APP.waterDate !== dayKey) {
     if(APP.waterDate) saveDailyEntry({ waterDrank: APP.waterDrank });
     APP.waterDrank = 0;
     APP.waterDate = dayKey;
-    // Öğünleri sıfırla — fotoğraf/analiz temizle, sadece 3 ana öğün kalsın
+    // Her gün sabah öğünleri sıfırla (fotoğraf/analiz temizle, ara öğünleri kaldır)
     APP.meals = JSON.parse(JSON.stringify(DEFAULT_MEALS));
     saveApp();
   }
@@ -2125,11 +2127,13 @@ function getMeals() {
 function getBloodData() {
   const rows = [];
   function addRow(name, val, unit, low, high, lowNote, highNote, okNote) {
-    if(val === null || val === undefined) return;
+    if(val === null || val === undefined || val === '') return;
+    const v = parseFloat(val);
+    if(isNaN(v)) return;
     let status = 'ok', note = okNote || 'Normal';
-    if(low !== null && val < low) { status = 'low'; note = lowNote || 'Dusuk'; }
-    if(high !== null && val > high) { status = 'high'; note = highNote || 'Yuksek'; }
-    rows.push({ name, val: val + ' ' + unit, status, note });
+    if(low !== null && v < low) { status = 'low'; note = lowNote || 'Düşük'; }
+    if(high !== null && v > high) { status = 'high'; note = highNote || 'Yüksek'; }
+    rows.push({ name, val: v + ' ' + unit, status, note });
   }
   // Vitaminler & Mineraller
   addRow('D Vitamini', APP.vitd, 'ng/mL', 30, 80, 'Eksik', 'Toksik', 'Optimal');
