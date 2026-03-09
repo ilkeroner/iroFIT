@@ -1233,6 +1233,7 @@ body::after {
         <span class="flabel">Hedefin</span>
         <div class="chips" id="goalChips">
           <div class="chip" data-group="goal" onclick="pickChip(this,'goal')">⚖️ Kilo ver</div>
+          <div class="chip" data-group="goal" onclick="pickChip(this,'goal')">📈 Kilo al</div>
           <div class="chip" data-group="goal" onclick="pickChip(this,'goal')">💪 Kas kazan</div>
           <div class="chip" data-group="goal" onclick="pickChip(this,'goal')">🌿 Sağlıklı yaşa</div>
           <div class="chip" data-group="goal" onclick="pickChip(this,'goal')">🔋 Enerji artır</div>
@@ -2037,6 +2038,7 @@ const DEFAULT_APP = {
   sodium: null, potassium: null, calcium: null, phosphorus: null,
   targetWeight: 60,
   tdee: 1600,
+  maintenanceCal: 2000,
   waterDrank: 0,
   waterDate: '',
   chatHistory: [],
@@ -2416,16 +2418,39 @@ function collectOnbData() {
     'sodium','potassium','calcium','phosphorus'
   ];
   allBloodFields.forEach(key => { const v = getField('f_' + key); if(v !== null) APP[key] = v; });
-  APP.targetWeight = APP.goal.includes('Kilo ver') ? Math.round(APP.weight * 0.9) : APP.weight + 5;
-  // TDEE calc
+  APP.targetWeight = APP.goal.includes('Kilo ver')
+    ? Math.round(APP.weight * 0.9)
+    : APP.goal.includes('Kilo al')
+      ? Math.round(APP.weight * 1.1)
+      : APP.weight;
+
+  // TDEE hesabı — Mifflin-St Jeor formülü
   let bmr = APP.gender === 'Kadın'
     ? 447.6 + (9.25 * APP.weight) + (3.1 * APP.height) - (4.33 * APP.age)
     : 88.36 + (13.4 * APP.weight) + (4.8 * APP.height) - (5.7 * APP.age);
-  const actMult = { 'Hareketsiz':1.2, 'Az aktif':1.375, 'Orta aktif':1.55, 'Çok aktif':1.725 };
-  const key = Object.keys(actMult).find(k => APP.activity.includes(k.split(' ')[0])) || 'Orta aktif';
-  APP.tdee = Math.round(bmr * (actMult[key] || 1.55));
-  if(APP.goal.includes('Kilo ver')) APP.tdee -= 350;
-  if(APP.goal.includes('kazan')) APP.tdee += 250;
+
+  const actMult = {
+    'Hareketsiz': 1.2,
+    'Az aktif':   1.375,
+    'Orta aktif': 1.55,
+    'Çok aktif':  1.725,
+  };
+  const actKey = Object.keys(actMult).find(k => APP.activity.includes(k.split(' ')[0])) || 'Orta aktif';
+  const maintenanceCal = Math.round(bmr * (actMult[actKey] || 1.55));
+
+  // Hedef kalori: profile göre
+  let targetCal = maintenanceCal;
+  if(APP.goal.includes('Kilo ver')) {
+    targetCal = maintenanceCal - 500;  // ~0.5 kg/hafta açık
+    targetCal = Math.max(targetCal, APP.gender === 'Kadın' ? 1200 : 1500);
+  } else if(APP.goal.includes('Kilo al')) {
+    targetCal = maintenanceCal + 500;  // ~0.5 kg/hafta fazla
+  } else if(APP.goal.includes('Kas kazan')) {
+    targetCal = maintenanceCal + 300;  // lean bulk
+  }
+  // Sağlıklı yaşa / Enerji artır → idame kalori
+  APP.tdee = targetCal;
+  APP.maintenanceCal = maintenanceCal;
   // İlk kez ağırlık günlüğü oluştur
   if(APP.weightLog.length === 0) {
     const now = new Date();
@@ -3534,9 +3559,23 @@ BUGÜNKÜ ÖĞÜNLER VE KALORİ:
 ${mealLines}
 → Bugün yenen kalori (AI analiz): ${totalConsumed} kal
 → Toplam (plan dahil): ${totalPlanned} kal
-→ Hedefe kalan: ${remaining > 0 ? remaining + ' kal açık' : Math.abs(remaining) + ' kal aşıldı ⚠️'}
+→ Günlük kalori hedefi: ${APP.tdee} kal | İdame: ${APP.maintenanceCal || APP.tdee} kal
 → Su: ${APP.waterDrank} / 8 bardak
-Kalori, öğün veya su sorularında bu veriyi kullan — uydurma.
+
+KALORİ YORUM KURALI — hedefe göre davran:
+${APP.goal && APP.goal.includes('Kilo ver')
+  ? `Kullanıcı KİLO VERMEK istiyor. Kalori açığı = başarı.
+- Günü hedefin (${APP.tdee} kal) ALTINDA kapatırsa: tebrik et, açığın kaç kal olduğunu söyle.
+- Günü hedefin ÜSTÜNDE kapatırsa: nazikçe uyar, aşım kalorini söyle.
+- Asla "daha fazla yiyebilirsin" veya "kalan yer var" deme.`
+  : APP.goal && (APP.goal.includes('Kilo al'))
+  ? `Kullanıcı KİLO ALMAK istiyor. Kalori fazlası = başarı.
+- Günü hedefin (${APP.tdee} kal) ÜSTÜNDE kapatırsa: tebrik et.
+- Hedefe ulaşamamışsa: eksik kalorisini söyle, nasıl tamamlayabileceğini öner.`
+  : `Kullanıcı SAĞLIKLI YAŞAM / DENGE peşinde. İdame kalori etrafında kalmak hedef.
+- Günü hedefin altında kapatırsa: kalan kalorisini söyle, eksiği tamamlamasını öner.
+- Günü hedefin üstünde kapatırsa: nazikçe bildir, yarın dengelemesini söyle.`
+}
 
 KAN TAHLİLİ:
 ${bloodLines.length > 0 ? bloodLines.join('\n') : 'Girilmemiş.'}
